@@ -2,7 +2,10 @@ module github.com/zero-day-ai/gibson-tools-official/reconnaissance/shodan
 
 go 1.24.4
 
-require github.com/zero-day-ai/sdk v0.0.0
+require (
+	github.com/zero-day-ai/gibson-tools-official/pkg v0.0.0-00010101000000-000000000000
+	github.com/zero-day-ai/sdk v0.0.0
+)
 
 require (
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
@@ -17,7 +20,8 @@ require (
 	google.golang.org/protobuf v1.36.11 // indirect
 )
 
-replace (
-	github.com/zero-day-ai/gibson => ../../../gibson
-	github.com/zero-day-ai/sdk => ../../../sdk
-)
+replace github.com/zero-day-ai/sdk => /tmp/build-test/sdk
+
+replace github.com/zero-day-ai/gibson => /tmp/build-test/gibson
+
+replace github.com/zero-day-ai/gibson-tools-official/pkg => ../../pkg

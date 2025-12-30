@@ -69,7 +69,7 @@ func (t *ToolImpl) Execute(ctx context.Context, input map[string]any) (map[strin
 	scanType := common.GetString(input, "scan_type", "syn")
 	serviceDetection := common.GetBool(input, "service_detection", true)
 	osDetection := common.GetBool(input, "os_detection", false)
-	scripts := common.GetStringSlice(input, "scripts", nil)
+	scripts := common.GetStringSlice(input, "scripts")
 	timing := common.GetInt(input, "timing", 3)
 	timeout := common.GetTimeout(input, "timeout", common.DefaultTimeout())
 

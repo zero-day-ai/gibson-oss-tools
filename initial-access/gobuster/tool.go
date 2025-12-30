@@ -68,7 +68,7 @@ func (t *ToolImpl) Execute(ctx context.Context, input map[string]any) (map[strin
 
 	wordlist := common.GetString(input, "wordlist", "/usr/share/wordlists/dirb/common.txt")
 	mode := common.GetString(input, "mode", "dir")
-	extensions := common.GetStringSlice(input, "extensions", nil)
+	extensions := common.GetStringSlice(input, "extensions")
 	threads := common.GetInt(input, "threads", 10)
 	timeout := common.GetTimeout(input, "timeout", common.DefaultTimeout())
 	statusCodes := common.GetString(input, "status_codes", "200,204,301,302,307,401,403")

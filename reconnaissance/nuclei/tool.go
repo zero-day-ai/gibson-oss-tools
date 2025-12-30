@@ -65,9 +65,9 @@ func (t *ToolImpl) Execute(ctx context.Context, input map[string]any) (map[strin
 		return nil, fmt.Errorf("target is required")
 	}
 
-	templates := common.GetStringSlice(input, "templates", nil)
-	severity := common.GetStringSlice(input, "severity", nil)
-	tags := common.GetStringSlice(input, "tags", nil)
+	templates := common.GetStringSlice(input, "templates")
+	severity := common.GetStringSlice(input, "severity")
+	tags := common.GetStringSlice(input, "tags")
 	timeout := common.GetTimeout(input, "timeout", common.DefaultTimeout())
 	rateLimit := common.GetInt(input, "rate_limit", 150)
 

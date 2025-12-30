@@ -60,7 +60,7 @@ func (t *ToolImpl) Execute(ctx context.Context, input map[string]any) (map[strin
 	startTime := time.Now()
 
 	// Extract input parameters
-	targets := common.GetStringSlice(input, "targets", nil)
+	targets := common.GetStringSlice(input, "targets")
 	if len(targets) == 0 {
 		return nil, fmt.Errorf("targets is required")
 	}
@@ -76,10 +76,10 @@ func (t *ToolImpl) Execute(ctx context.Context, input map[string]any) (map[strin
 
 	// Execute httpx command with stdin input
 	result, err := executor.Execute(ctx, executor.Config{
-		Command: BinaryName,
-		Args:    args,
-		Stdin:   strings.Join(targets, "\n"),
-		Timeout: timeout,
+		Command:   BinaryName,
+		Args:      args,
+		StdinData: []byte(strings.Join(targets, "\n")),
+		Timeout:   timeout,
 	})
 
 	if err != nil {
