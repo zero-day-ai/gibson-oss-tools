@@ -251,13 +251,13 @@ Performance benchmarks for critical operations ensure scalability.
 
 ### Run All Tests
 ```bash
-cd /home/anthony/Code/zero-day.ai/opensource/gibson-tools-official/kubernetes
+cd <gibson-root>-tools-official/kubernetes
 go test ./... -v
 ```
 
 ### Run Tests for Specific Tool
 ```bash
-cd /home/anthony/Code/zero-day.ai/opensource/gibson-tools-official/kubernetes/rbac-enum
+cd <gibson-root>-tools-official/kubernetes/rbac-enum
 go test -v
 ```
 

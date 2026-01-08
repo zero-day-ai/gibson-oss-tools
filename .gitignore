@@ -33,6 +33,7 @@ go.work.sum
 # Binaries - NO BINARIES ALLOWED IN REPO (Security Policy)
 # All binaries must be built from source locally
 **/bin/
+bin/*
 *.exe
 *.dll
 *.so

@@ -14,8 +14,8 @@ import (
 
 const (
 	ToolName        = "shodan"
-	ToolVersion     = "1.0.0"
-	ToolDescription = "Search Shodan for exposed services and internet-facing vulnerabilities"
+	ToolVersion     = "1.1.0"
+	ToolDescription = "Search Shodan for exposed services, perform host lookups, and extract vulnerability data"
 	BinaryName      = "shodan"
 )
 
@@ -53,9 +53,14 @@ func (t *toolWithHealth) Health(ctx context.Context) types.HealthStatus {
 	return t.impl.Health(ctx)
 }
 
-// Execute runs the Shodan search query
+// Execute runs the Shodan search query or host lookup
 func (t *ToolImpl) Execute(ctx context.Context, input map[string]any) (map[string]any, error) {
 	// Extract input parameters
+	mode := "search"
+	if m, ok := input["mode"].(string); ok {
+		mode = m
+	}
+
 	query, _ := input["query"].(string)
 	apiKey, _ := input["api_key"].(string)
 
@@ -77,18 +82,38 @@ func (t *ToolImpl) Execute(ctx context.Context, input map[string]any) (map[strin
 		}
 	}
 
-	// Build shodan command arguments
-	args := []string{"search", "--fields", "ip_str,port,org,isp,os,product,version,data,vulns,location", query}
-
-	// Add limit
-	if limit > 0 {
-		args = append(args, "--limit", strconv.Itoa(limit))
+	// Extract history flag
+	history := false
+	if h, ok := input["history"].(bool); ok {
+		history = h
 	}
 
-	// Add facets if specified
-	if len(facets) > 0 {
-		for _, facet := range facets {
-			args = append(args, "--facets", facet)
+	var args []string
+	var isHostMode bool
+
+	// Build command based on mode
+	if mode == "host" {
+		// Host lookup mode - provides detailed information about a specific host
+		isHostMode = true
+		args = []string{"host", query}
+		if history {
+			args = append(args, "--history")
+		}
+	} else {
+		// Search mode - general search query
+		isHostMode = false
+		args = []string{"search", "--fields", "ip_str,port,org,isp,os,product,version,data,vulns,location,tags,hostnames,domains", query}
+
+		// Add limit
+		if limit > 0 {
+			args = append(args, "--limit", strconv.Itoa(limit))
+		}
+
+		// Add facets if specified
+		if len(facets) > 0 {
+			for _, facet := range facets {
+				args = append(args, "--facets", facet)
+			}
 		}
 	}
 
@@ -103,7 +128,12 @@ func (t *ToolImpl) Execute(ctx context.Context, input map[string]any) (map[strin
 	}
 
 	// Parse the output
-	results, err := parseOutput(output)
+	var results map[string]any
+	if isHostMode {
+		results, err = parseHostOutput(output)
+	} else {
+		results, err = parseOutput(output)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse shodan output: %w", err)
 	}
@@ -197,11 +227,130 @@ func parseTabSeparated(line []byte) map[string]any {
 		result["version"] = string(fields[6])
 	}
 
-	// Initialize empty arrays for vulns and location
+	// Initialize empty arrays and objects
 	result["vulns"] = []string{}
+	result["vulnerabilities"] = []map[string]any{}
 	result["location"] = map[string]any{}
+	result["tags"] = []string{}
+	result["hostnames"] = []string{}
+	result["domains"] = []string{}
+	result["screenshot"] = map[string]any{}
 
 	return result
+}
+
+// parseHostOutput parses the output from 'shodan host' command
+// The host command returns JSON data about a specific host
+func parseHostOutput(output []byte) (map[string]any, error) {
+	// The 'shodan host' command returns JSON output
+	var hostData map[string]any
+	if err := json.Unmarshal(output, &hostData); err != nil {
+		return nil, fmt.Errorf("failed to parse host JSON: %w", err)
+	}
+
+	// Extract and structure the data
+	results := []map[string]any{}
+
+	// The host data contains detailed information
+	result := map[string]any{
+		"ip":               hostData["ip_str"],
+		"org":              hostData["org"],
+		"isp":              hostData["isp"],
+		"os":               hostData["os"],
+		"hostnames":        hostData["hostnames"],
+		"domains":          hostData["domains"],
+		"tags":             hostData["tags"],
+		"vulns":            []string{},
+		"vulnerabilities":  []map[string]any{},
+		"location":         map[string]any{},
+		"screenshot":       map[string]any{},
+	}
+
+	// Extract location data
+	if loc, ok := hostData["location"].(map[string]any); ok {
+		result["location"] = map[string]any{
+			"country_code": loc["country_code"],
+			"country_name": loc["country_name"],
+			"city":         loc["city"],
+			"latitude":     loc["latitude"],
+			"longitude":    loc["longitude"],
+		}
+	}
+
+	// Extract vulnerability data
+	if vulns, ok := hostData["vulns"].([]any); ok {
+		vulnList := []string{}
+		vulnDetails := []map[string]any{}
+
+		for _, v := range vulns {
+			if vulnStr, ok := v.(string); ok {
+				vulnList = append(vulnList, vulnStr)
+			} else if vulnMap, ok := v.(map[string]any); ok {
+				// Detailed vulnerability object
+				detail := map[string]any{
+					"cve":      vulnMap["cve"],
+					"cvss":     vulnMap["cvss"],
+					"summary":  vulnMap["summary"],
+					"verified": vulnMap["verified"],
+				}
+				vulnDetails = append(vulnDetails, detail)
+
+				// Also add to simple list
+				if cve, ok := vulnMap["cve"].(string); ok {
+					vulnList = append(vulnList, cve)
+				}
+			}
+		}
+
+		result["vulns"] = vulnList
+		result["vulnerabilities"] = vulnDetails
+	}
+
+	// Extract screenshot data if available
+	if screenshot, ok := hostData["screenshot"].(map[string]any); ok {
+		result["screenshot"] = map[string]any{
+			"data":   screenshot["data"],
+			"labels": screenshot["labels"],
+		}
+	}
+
+	// Extract service/port information from the 'data' field
+	if dataArray, ok := hostData["data"].([]any); ok {
+		for _, item := range dataArray {
+			if serviceData, ok := item.(map[string]any); ok {
+				serviceResult := map[string]any{
+					"ip":               result["ip"],
+					"port":             serviceData["port"],
+					"org":              result["org"],
+					"isp":              result["isp"],
+					"os":               result["os"],
+					"product":          serviceData["product"],
+					"version":          serviceData["version"],
+					"banner":           serviceData["data"],
+					"vulns":            result["vulns"],
+					"vulnerabilities":  result["vulnerabilities"],
+					"location":         result["location"],
+					"screenshot":       result["screenshot"],
+					"tags":             result["tags"],
+					"hostnames":        result["hostnames"],
+					"domains":          result["domains"],
+				}
+				results = append(results, serviceResult)
+			}
+		}
+	}
+
+	// If no service data was found, return the host info as a single result
+	if len(results) == 0 {
+		results = append(results, result)
+	}
+
+	return map[string]any{
+		"total":              len(results),
+		"results":            results,
+		"facets":             map[string]any{},
+		"query_credits_used": 1,
+	}, nil
 }
 
 // splitByTab splits a byte slice by tab characters
