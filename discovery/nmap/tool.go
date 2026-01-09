@@ -67,7 +67,7 @@ func (t *ToolImpl) Execute(ctx context.Context, input map[string]any) (map[strin
 	}
 
 	ports := sdkinput.GetString(input, "ports", "1-1000")
-	scanType := sdkinput.GetString(input, "scan_type", "syn")
+	scanType := sdkinput.GetString(input, "scan_type", "connect")
 	serviceDetection := sdkinput.GetBool(input, "service_detection", true)
 	osDetection := sdkinput.GetBool(input, "os_detection", false)
 	scripts := sdkinput.GetStringSlice(input, "scripts")

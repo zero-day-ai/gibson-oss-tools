@@ -13,9 +13,9 @@ func InputSchema() schema.JSON {
 		},
 		"scan_type": schema.JSON{
 			Type:        "string",
-			Description: "Scan type: syn, connect, udp, ack, window, maimon",
-			Enum:        []any{"syn", "connect", "udp", "ack", "window", "maimon"},
-			Default:     "syn",
+			Description: "Scan type: connect (default, no root), syn (requires root), udp, ack, window, maimon",
+			Enum:        []any{"connect", "syn", "udp", "ack", "window", "maimon"},
+			Default:     "connect",
 		},
 		"service_detection": schema.JSON{
 			Type:        "boolean",
