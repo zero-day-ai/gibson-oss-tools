@@ -163,17 +163,19 @@ all: build test
 bin: build
 
 # Build all tools (tidy first to ensure deps are current)
-build: tidy $(BIN_DIR)
+build: tidy build-dir
 	@echo "Building all Gibson Tools..."
 	@$(MAKE) --no-print-directory $(BINARIES)
 	@echo "Build complete! Binaries are in $(BIN_DIR)/"
 
-# Create bin directory
-$(BIN_DIR):
+# Create bin directory (separate target to avoid conflict with 'bin' alias)
+.PHONY: build-dir
+build-dir:
 	@mkdir -p $(BIN_DIR)
 
 # Generic build rule for individual tools
-$(BIN_DIR)/%: */% | $(BIN_DIR)
+$(BIN_DIR)/%: */%
+	@mkdir -p $(BIN_DIR)
 	@tool_path=$$(find . -type d -name "$*" | head -1); \
 	if [ -z "$$tool_path" ]; then \
 		echo "Error: Could not find tool $*"; \
