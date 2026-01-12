@@ -162,8 +162,8 @@ all: build test
 # Alias for build (consistency with other components)
 bin: build
 
-# Build all tools
-build: $(BIN_DIR)
+# Build all tools (tidy first to ensure deps are current)
+build: tidy $(BIN_DIR)
 	@echo "Building all Gibson Tools..."
 	@$(MAKE) --no-print-directory $(BINARIES)
 	@echo "Build complete! Binaries are in $(BIN_DIR)/"
