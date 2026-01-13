@@ -1,5 +1,5 @@
 # Makefile for Gibson Tools Ecosystem
-# Build, test, and manage all security tools organized by MITRE ATT&CK phases
+# Build, test, and manage all security tools with embedded GraphRAG taxonomy
 
 # Go parameters
 GOCMD=go
@@ -15,90 +15,23 @@ BIN_DIR=bin
 BUILD_FLAGS=
 VERBOSE_FLAG=
 
-# Tool directories - organized by MITRE ATT&CK phase
+# Tool directories - only tools with embedded GraphRAG taxonomy
 # Reconnaissance Tools (TA0043)
 RECON_TOOLS := \
 	reconnaissance/subfinder \
 	reconnaissance/httpx \
 	reconnaissance/amass \
-	reconnaissance/theharvester \
-	reconnaissance/nuclei \
-	reconnaissance/playwright \
-	reconnaissance/recon-ng \
-	reconnaissance/shodan \
-	reconnaissance/spiderfoot
-
-# Resource Development Tools (TA0042)
-RESOURCE_DEV_TOOLS := \
-	resource-development/searchsploit
-
-# Initial Access Tools (TA0001)
-INITIAL_ACCESS_TOOLS := \
-	initial-access/sqlmap \
-	initial-access/gobuster \
-	initial-access/hydra \
-	initial-access/metasploit
-
-# Execution Tools (TA0002)
-EXECUTION_TOOLS := \
-	execution/evil-winrm \
-	execution/impacket
-
-# Persistence Tools (TA0003)
-PERSISTENCE_TOOLS := \
-	persistence/chisel
-
-# Privilege Escalation Tools (TA0004)
-PRIVESC_TOOLS := \
-	privilege-escalation/linpeas \
-	privilege-escalation/winpeas \
-	privilege-escalation/john
-
-# Defense Evasion Tools (TA0005)
-DEFENSE_EVASION_TOOLS := \
-	defense-evasion/msfvenom
-
-# Credential Access Tools (TA0006)
-CREDENTIAL_ACCESS_TOOLS := \
-	credential-access/secretsdump
+	reconnaissance/nuclei
 
 # Discovery Tools (TA0007)
 DISCOVERY_TOOLS := \
 	discovery/nmap \
-	discovery/ping \
-	discovery/bloodhound
-
-# Lateral Movement Tools (TA0008)
-LATERAL_MOVEMENT_TOOLS :=
-
-# Collection Tools (TA0009)
-COLLECTION_TOOLS :=
-
-# Command and Control Tools (TA0011)
-C2_TOOLS :=
-
-# Exfiltration Tools (TA0010)
-EXFILTRATION_TOOLS :=
-
-# Impact Tools (TA0040)
-IMPACT_TOOLS :=
+	discovery/masscan
 
 # All tools combined
 ALL_TOOLS := \
 	$(RECON_TOOLS) \
-	$(RESOURCE_DEV_TOOLS) \
-	$(INITIAL_ACCESS_TOOLS) \
-	$(EXECUTION_TOOLS) \
-	$(PERSISTENCE_TOOLS) \
-	$(PRIVESC_TOOLS) \
-	$(DEFENSE_EVASION_TOOLS) \
-	$(CREDENTIAL_ACCESS_TOOLS) \
-	$(DISCOVERY_TOOLS) \
-	$(LATERAL_MOVEMENT_TOOLS) \
-	$(COLLECTION_TOOLS) \
-	$(C2_TOOLS) \
-	$(EXFILTRATION_TOOLS) \
-	$(IMPACT_TOOLS)
+	$(DISCOVERY_TOOLS)
 
 # Binary names (extract basename from paths)
 BINARIES := $(foreach tool,$(ALL_TOOLS),$(BIN_DIR)/$(notdir $(tool)))
@@ -108,16 +41,15 @@ BINARIES := $(foreach tool,$(ALL_TOOLS),$(BIN_DIR)/$(notdir $(tool)))
 
 # Phony targets
 .PHONY: all bin build test integration-test clean help \
-	build-recon build-resource-dev build-initial-access build-execution \
-	build-persistence build-privesc build-defense-evasion build-credential-access \
-	build-discovery build-lateral-movement build-collection build-c2 \
-	build-exfiltration build-impact \
+	build-recon build-discovery \
 	verify deps tidy fmt vet lint
 
 # Help target - display available targets
 help:
 	@echo "Gibson Tools Ecosystem - Build System"
 	@echo "======================================"
+	@echo ""
+	@echo "All tools include embedded GraphRAG taxonomy for knowledge graph integration."
 	@echo ""
 	@echo "Available targets:"
 	@echo "  all              - Build and test all tools (default)"
@@ -134,20 +66,8 @@ help:
 	@echo "  lint             - Run golangci-lint (if available)"
 	@echo ""
 	@echo "Phase-specific build targets:"
-	@echo "  build-recon              - Build reconnaissance tools"
-	@echo "  build-resource-dev       - Build resource development tools"
-	@echo "  build-initial-access     - Build initial access tools"
-	@echo "  build-execution          - Build execution tools"
-	@echo "  build-persistence        - Build persistence tools"
-	@echo "  build-privesc            - Build privilege escalation tools"
-	@echo "  build-defense-evasion    - Build defense evasion tools"
-	@echo "  build-credential-access  - Build credential access tools"
-	@echo "  build-discovery          - Build discovery tools"
-	@echo "  build-lateral-movement   - Build lateral movement tools"
-	@echo "  build-collection         - Build collection tools"
-	@echo "  build-c2                 - Build command and control tools"
-	@echo "  build-exfiltration       - Build exfiltration tools"
-	@echo "  build-impact             - Build impact tools"
+	@echo "  build-recon      - Build reconnaissance tools (subfinder, httpx, amass, nuclei)"
+	@echo "  build-discovery  - Build discovery tools (nmap, masscan)"
 	@echo ""
 	@echo "Examples:"
 	@echo "  make              # Build and test all tools"
@@ -190,69 +110,17 @@ $(BIN_DIR)/%: */%
 	echo "  ✓ Built $* ($$(du -h ../../$(BIN_DIR)/$* | cut -f1))"
 
 # Phase-specific build targets
-build-recon: $(BIN_DIR)
+build-recon: build-dir
 	@echo "Building Reconnaissance tools..."
 	@$(foreach tool,$(RECON_TOOLS),$(MAKE) --no-print-directory $(BIN_DIR)/$(notdir $(tool));)
 
-build-resource-dev: $(BIN_DIR)
-	@echo "Building Resource Development tools..."
-	@$(foreach tool,$(RESOURCE_DEV_TOOLS),$(MAKE) --no-print-directory $(BIN_DIR)/$(notdir $(tool));)
-
-build-initial-access: $(BIN_DIR)
-	@echo "Building Initial Access tools..."
-	@$(foreach tool,$(INITIAL_ACCESS_TOOLS),$(MAKE) --no-print-directory $(BIN_DIR)/$(notdir $(tool));)
-
-build-execution: $(BIN_DIR)
-	@echo "Building Execution tools..."
-	@$(foreach tool,$(EXECUTION_TOOLS),$(MAKE) --no-print-directory $(BIN_DIR)/$(notdir $(tool));)
-
-build-persistence: $(BIN_DIR)
-	@echo "Building Persistence tools..."
-	@$(foreach tool,$(PERSISTENCE_TOOLS),$(MAKE) --no-print-directory $(BIN_DIR)/$(notdir $(tool));)
-
-build-privesc: $(BIN_DIR)
-	@echo "Building Privilege Escalation tools..."
-	@$(foreach tool,$(PRIVESC_TOOLS),$(MAKE) --no-print-directory $(BIN_DIR)/$(notdir $(tool));)
-
-build-defense-evasion: $(BIN_DIR)
-	@echo "Building Defense Evasion tools..."
-	@$(foreach tool,$(DEFENSE_EVASION_TOOLS),$(MAKE) --no-print-directory $(BIN_DIR)/$(notdir $(tool));)
-
-build-credential-access: $(BIN_DIR)
-	@echo "Building Credential Access tools..."
-	@$(foreach tool,$(CREDENTIAL_ACCESS_TOOLS),$(MAKE) --no-print-directory $(BIN_DIR)/$(notdir $(tool));)
-
-build-discovery: $(BIN_DIR)
+build-discovery: build-dir
 	@echo "Building Discovery tools..."
 	@$(foreach tool,$(DISCOVERY_TOOLS),$(MAKE) --no-print-directory $(BIN_DIR)/$(notdir $(tool));)
-
-build-lateral-movement: $(BIN_DIR)
-	@echo "Building Lateral Movement tools..."
-	@$(foreach tool,$(LATERAL_MOVEMENT_TOOLS),$(MAKE) --no-print-directory $(BIN_DIR)/$(notdir $(tool));)
-
-build-collection: $(BIN_DIR)
-	@echo "Building Collection tools..."
-	@$(foreach tool,$(COLLECTION_TOOLS),$(MAKE) --no-print-directory $(BIN_DIR)/$(notdir $(tool));)
-
-build-c2: $(BIN_DIR)
-	@echo "Building Command and Control tools..."
-	@$(foreach tool,$(C2_TOOLS),$(MAKE) --no-print-directory $(BIN_DIR)/$(notdir $(tool));)
-
-build-exfiltration: $(BIN_DIR)
-	@echo "Building Exfiltration tools..."
-	@$(foreach tool,$(EXFILTRATION_TOOLS),$(MAKE) --no-print-directory $(BIN_DIR)/$(notdir $(tool));)
-
-build-impact: $(BIN_DIR)
-	@echo "Building Impact tools..."
-	@$(foreach tool,$(IMPACT_TOOLS),$(MAKE) --no-print-directory $(BIN_DIR)/$(notdir $(tool));)
 
 # Run all unit tests
 test:
 	@echo "Running unit tests..."
-	@if [ -d "pkg" ] && [ -f "pkg/go.mod" ]; then \
-		echo "Testing pkg..."; \
-		cd pkg && $(GOTEST) -v ./... && cd - > /dev/null || exit 1; \
-	fi
 	@for dir in $(ALL_TOOLS); do \
 		if [ -d "$$dir" ] && [ -f "$$dir/go.mod" ]; then \
 			echo "Testing $$dir..."; \
@@ -265,10 +133,6 @@ test:
 integration-test:
 	@echo "Running integration tests..."
 	@echo "Note: Integration tests require actual security tools to be installed"
-	@if [ -d "pkg" ] && [ -f "pkg/go.mod" ]; then \
-		echo "Integration testing pkg..."; \
-		cd pkg && $(GOTEST) -v -tags=integration ./... && cd - > /dev/null || exit 1; \
-	fi
 	@for dir in $(ALL_TOOLS); do \
 		if [ -d "$$dir" ] && [ -f "$$dir/go.mod" ]; then \
 			echo "Integration testing $$dir..."; \
@@ -297,7 +161,7 @@ deps:
 # Tidy go modules
 tidy:
 	@echo "Tidying modules..."
-	@for dir in pkg $(ALL_TOOLS); do \
+	@for dir in $(ALL_TOOLS); do \
 		if [ -f "$$dir/go.mod" ]; then \
 			echo "  Tidying $$dir..."; \
 			cd $$dir && $(GOMOD) tidy -v 2>&1 | sed 's/^/    /' && cd - > /dev/null; \
@@ -337,13 +201,6 @@ stats: build
 	@echo ""
 	@echo "By phase:"
 	@echo "  Reconnaissance: $(words $(RECON_TOOLS))"
-	@echo "  Resource Development: $(words $(RESOURCE_DEV_TOOLS))"
-	@echo "  Initial Access: $(words $(INITIAL_ACCESS_TOOLS))"
-	@echo "  Execution: $(words $(EXECUTION_TOOLS))"
-	@echo "  Persistence: $(words $(PERSISTENCE_TOOLS))"
-	@echo "  Privilege Escalation: $(words $(PRIVESC_TOOLS))"
-	@echo "  Defense Evasion: $(words $(DEFENSE_EVASION_TOOLS))"
-	@echo "  Credential Access: $(words $(CREDENTIAL_ACCESS_TOOLS))"
 	@echo "  Discovery: $(words $(DISCOVERY_TOOLS))"
 	@echo ""
 	@echo "Binaries:"

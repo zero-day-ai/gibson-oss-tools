@@ -18,21 +18,44 @@ func InputSchema() schema.JSON {
 	}, "targets", "ports") // targets and ports are required
 }
 
-// OutputSchema defines the output schema for the masscan tool
+// OutputSchema defines the output schema for the masscan tool.
+// Includes embedded taxonomy mappings for GraphRAG integration.
 func OutputSchema() schema.JSON {
+	// Port schema with taxonomy for port nodes
 	portSchema := schema.Object(map[string]schema.JSON{
 		"port":     schema.JSON{Type: "integer", Description: "Port number"},
 		"protocol": schema.StringWithDesc("Protocol (tcp or udp)"),
 		"state":    schema.StringWithDesc("Port state (open)"),
 		"banner":   schema.StringWithDesc("Service banner (if banners enabled)"),
+	}).WithTaxonomy(schema.TaxonomyMapping{
+		NodeType:   "port",
+		IDTemplate: "port:{_parent.ip}:{.port}:{.protocol}",
+		Properties: []schema.PropertyMapping{
+			schema.PropMap("port", "number"),
+			schema.PropMap("protocol", "protocol"),
+			schema.PropMap("state", "state"),
+		},
+		Relationships: []schema.RelationshipMapping{
+			schema.Rel("HAS_PORT", "host:{_parent.ip}", "port:{_parent.ip}:{.port}:{.protocol}"),
+		},
 	})
 
 	portsArray := schema.Array(portSchema)
 	portsArray.Description = "List of open ports"
 
+	// Host schema with taxonomy for host nodes
 	hostSchema := schema.Object(map[string]schema.JSON{
 		"ip":    schema.StringWithDesc("IP address of the host"),
 		"ports": portsArray,
+	}).WithTaxonomy(schema.TaxonomyMapping{
+		NodeType:   "host",
+		IDTemplate: "host:{.ip}",
+		Properties: []schema.PropertyMapping{
+			schema.PropMap("ip", "ip"),
+		},
+		Relationships: []schema.RelationshipMapping{
+			schema.Rel("DISCOVERED", "agent_run:{_context.agent_run_id}", "host:{.ip}"),
+		},
 	})
 
 	hostsArray := schema.Array(hostSchema)

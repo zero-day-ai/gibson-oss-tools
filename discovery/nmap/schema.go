@@ -45,22 +45,52 @@ func InputSchema() schema.JSON {
 }
 
 // OutputSchema returns the JSON schema for nmap tool output.
+// Includes embedded taxonomy mappings for GraphRAG integration.
 func OutputSchema() schema.JSON {
+	// Port schema with taxonomy for port nodes
+	portSchema := schema.Object(map[string]schema.JSON{
+		"port":     schema.Int(),
+		"protocol": schema.String(),
+		"state":    schema.String(),
+		"service":  schema.String(),
+		"version":  schema.String(),
+	}).WithTaxonomy(schema.TaxonomyMapping{
+		NodeType:   "port",
+		IDTemplate: "port:{_parent.ip}:{.port}:{.protocol}",
+		Properties: []schema.PropertyMapping{
+			schema.PropMap("port", "number"),
+			schema.PropMap("protocol", "protocol"),
+			schema.PropMap("state", "state"),
+		},
+		Relationships: []schema.RelationshipMapping{
+			schema.Rel("HAS_PORT", "host:{_parent.ip}", "port:{_parent.ip}:{.port}:{.protocol}"),
+		},
+	})
+
+	// Host schema with taxonomy for host nodes
+	hostSchema := schema.Object(map[string]schema.JSON{
+		"ip":       schema.String(),
+		"hostname": schema.String(),
+		"state":    schema.String(),
+		"os":       schema.String(),
+		"ports":    schema.Array(portSchema),
+	}).WithTaxonomy(schema.TaxonomyMapping{
+		NodeType:   "host",
+		IDTemplate: "host:{.ip}",
+		Properties: []schema.PropertyMapping{
+			schema.PropMap("ip", "ip"),
+			schema.PropMap("hostname", "hostname"),
+			schema.PropMap("state", "state"),
+			schema.PropMap("os", "os"),
+		},
+		Relationships: []schema.RelationshipMapping{
+			schema.Rel("DISCOVERED", "agent_run:{_context.agent_run_id}", "host:{.ip}"),
+		},
+	})
+
 	return schema.Object(map[string]schema.JSON{
-		"target": schema.String(),
-		"hosts": schema.Array(schema.Object(map[string]schema.JSON{
-			"ip":       schema.String(),
-			"hostname": schema.String(),
-			"state":    schema.String(),
-			"os":       schema.String(),
-			"ports": schema.Array(schema.Object(map[string]schema.JSON{
-				"port":     schema.Int(),
-				"protocol": schema.String(),
-				"state":    schema.String(),
-				"service":  schema.String(),
-				"version":  schema.String(),
-			})),
-		})),
+		"target":       schema.String(),
+		"hosts":        schema.Array(hostSchema),
 		"total_hosts":  schema.Int(),
 		"hosts_up":     schema.Int(),
 		"scan_time_ms": schema.Int(),

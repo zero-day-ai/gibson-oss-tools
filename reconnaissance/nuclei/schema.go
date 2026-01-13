@@ -34,17 +34,37 @@ func InputSchema() schema.JSON {
 }
 
 // OutputSchema returns the JSON schema for nuclei tool output.
+// Includes embedded taxonomy mappings for GraphRAG integration.
 func OutputSchema() schema.JSON {
+	// Finding schema with taxonomy for vulnerability/finding nodes
+	findingSchema := schema.Object(map[string]schema.JSON{
+		"template_id":   schema.String(),
+		"template_name": schema.String(),
+		"severity":      schema.String(),
+		"type":          schema.String(),
+		"matched_at":    schema.String(),
+		"extracted":     schema.Array(schema.String()),
+	}).WithTaxonomy(schema.TaxonomyMapping{
+		NodeType:   "finding",
+		IDTemplate: "finding:{.template_id}:{.matched_at}",
+		Properties: []schema.PropertyMapping{
+			schema.PropMap("template_id", "template_id"),
+			schema.PropMap("template_name", "title"),
+			schema.PropMapWithTransform("severity", "severity", "lowercase"),
+			schema.PropMap("type", "category"),
+			schema.PropMap("matched_at", "affected_component"),
+		},
+		Relationships: []schema.RelationshipMapping{
+			// Link finding to affected endpoint
+			schema.Rel("AFFECTS", "finding:{.template_id}:{.matched_at}", "endpoint:{.matched_at}"),
+			// Link agent run to discovered finding
+			schema.Rel("DISCOVERED", "agent_run:{_context.agent_run_id}", "finding:{.template_id}:{.matched_at}"),
+		},
+	})
+
 	return schema.Object(map[string]schema.JSON{
-		"target": schema.String(),
-		"findings": schema.Array(schema.Object(map[string]schema.JSON{
-			"template_id":   schema.String(),
-			"template_name": schema.String(),
-			"severity":      schema.String(),
-			"type":          schema.String(),
-			"matched_at":    schema.String(),
-			"extracted":     schema.Array(schema.String()),
-		})),
+		"target":         schema.String(),
+		"findings":       schema.Array(findingSchema),
 		"total_findings": schema.Int(),
 		"scan_time_ms":   schema.Int(),
 	})

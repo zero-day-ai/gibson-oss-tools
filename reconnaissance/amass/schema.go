@@ -32,22 +32,89 @@ func InputSchema() schema.JSON {
 }
 
 // OutputSchema returns the JSON schema for amass tool output.
+// Includes embedded taxonomy mappings for GraphRAG integration.
 func OutputSchema() schema.JSON {
+	// Domain field with taxonomy for domain node creation
+	domainSchema := schema.String().WithTaxonomy(schema.TaxonomyMapping{
+		NodeType:   "domain",
+		IDTemplate: "domain:{.}",
+		Properties: []schema.PropertyMapping{
+			schema.PropMap(".", "name"),
+		},
+		Relationships: []schema.RelationshipMapping{
+			schema.Rel("DISCOVERED", "agent_run:{_context.agent_run_id}", "domain:{.}"),
+		},
+	})
+
+	// Subdomain schema - each string is a subdomain FQDN
+	subdomainSchema := schema.String().WithTaxonomy(schema.TaxonomyMapping{
+		NodeType:   "subdomain",
+		IDTemplate: "subdomain:{.}",
+		Properties: []schema.PropertyMapping{
+			schema.PropMap(".", "name"),
+		},
+		Relationships: []schema.RelationshipMapping{
+			schema.Rel("HAS_SUBDOMAIN", "domain:{_root.domain}", "subdomain:{.}"),
+			schema.Rel("DISCOVERED", "agent_run:{_context.agent_run_id}", "subdomain:{.}"),
+		},
+	})
+
+	// IP address schema - each string is a host IP
+	ipSchema := schema.String().WithTaxonomy(schema.TaxonomyMapping{
+		NodeType:   "host",
+		IDTemplate: "host:{.}",
+		Properties: []schema.PropertyMapping{
+			schema.PropMap(".", "ip"),
+		},
+		Relationships: []schema.RelationshipMapping{
+			schema.Rel("DISCOVERED", "agent_run:{_context.agent_run_id}", "host:{.}"),
+		},
+	})
+
+	// ASN info schema
+	asnSchema := schema.Object(map[string]schema.JSON{
+		"asn":         schema.Int(),
+		"description": schema.String(),
+		"country":     schema.String(),
+	}).WithTaxonomy(schema.TaxonomyMapping{
+		NodeType:   "asn",
+		IDTemplate: "asn:{.asn}",
+		Properties: []schema.PropertyMapping{
+			schema.PropMap("asn", "number"),
+			schema.PropMap("description", "description"),
+			schema.PropMap("country", "country"),
+		},
+		Relationships: []schema.RelationshipMapping{
+			schema.Rel("DISCOVERED", "agent_run:{_context.agent_run_id}", "asn:{.asn}"),
+		},
+	})
+
+	// DNS record schema
+	dnsRecordSchema := schema.Object(map[string]schema.JSON{
+		"name":  schema.String(),
+		"type":  schema.String(),
+		"value": schema.String(),
+	}).WithTaxonomy(schema.TaxonomyMapping{
+		NodeType:   "dns_record",
+		IDTemplate: "dns_record:{.name}:{.type}:{.value}",
+		Properties: []schema.PropertyMapping{
+			schema.PropMap("name", "name"),
+			schema.PropMap("type", "record_type"),
+			schema.PropMap("value", "value"),
+		},
+		Relationships: []schema.RelationshipMapping{
+			// Link subdomain to DNS record
+			schema.Rel("HAS_DNS_RECORD", "subdomain:{.name}", "dns_record:{.name}:{.type}:{.value}"),
+		},
+	})
+
 	return schema.Object(map[string]schema.JSON{
-		"domain": schema.String(),
-		"subdomains": schema.Array(schema.String()),
-		"ip_addresses": schema.Array(schema.String()),
-		"asn_info": schema.Array(schema.Object(map[string]schema.JSON{
-			"asn":         schema.Int(),
-			"description": schema.String(),
-			"country":     schema.String(),
-		})),
-		"dns_records": schema.Array(schema.Object(map[string]schema.JSON{
-			"name":  schema.String(),
-			"type":  schema.String(),
-			"value": schema.String(),
-		})),
-		"whois": schema.Object(map[string]schema.JSON{}), // Generic object for WHOIS data
+		"domain":       domainSchema,
+		"subdomains":   schema.Array(subdomainSchema),
+		"ip_addresses": schema.Array(ipSchema),
+		"asn_info":     schema.Array(asnSchema),
+		"dns_records":  schema.Array(dnsRecordSchema),
+		"whois":        schema.Object(map[string]schema.JSON{}), // Generic object for WHOIS data
 		"scan_time_ms": schema.Int(),
 	})
 }
