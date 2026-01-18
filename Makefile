@@ -28,10 +28,18 @@ DISCOVERY_TOOLS := \
 	discovery/nmap \
 	discovery/masscan
 
+# Fingerprinting Tools (TA0015)
+FINGERPRINTING_TOOLS := \
+	fingerprinting/wappalyzer \
+	fingerprinting/whatweb \
+	fingerprinting/testssl \
+	fingerprinting/sslyze
+
 # All tools combined
 ALL_TOOLS := \
 	$(RECON_TOOLS) \
-	$(DISCOVERY_TOOLS)
+	$(DISCOVERY_TOOLS) \
+	$(FINGERPRINTING_TOOLS)
 
 # Binary names (extract basename from paths)
 BINARIES := $(foreach tool,$(ALL_TOOLS),$(BIN_DIR)/$(notdir $(tool)))
@@ -41,7 +49,7 @@ BINARIES := $(foreach tool,$(ALL_TOOLS),$(BIN_DIR)/$(notdir $(tool)))
 
 # Phony targets
 .PHONY: all bin build test integration-test clean help \
-	build-recon build-discovery \
+	build-recon build-discovery build-fingerprinting \
 	verify deps tidy fmt vet lint
 
 # Help target - display available targets
@@ -66,8 +74,9 @@ help:
 	@echo "  lint             - Run golangci-lint (if available)"
 	@echo ""
 	@echo "Phase-specific build targets:"
-	@echo "  build-recon      - Build reconnaissance tools (subfinder, httpx, amass, nuclei)"
-	@echo "  build-discovery  - Build discovery tools (nmap, masscan)"
+	@echo "  build-recon        - Build reconnaissance tools (subfinder, httpx, amass, nuclei)"
+	@echo "  build-discovery    - Build discovery tools (nmap, masscan)"
+	@echo "  build-fingerprinting - Build fingerprinting tools (wappalyzer, whatweb, testssl, sslyze)"
 	@echo ""
 	@echo "Examples:"
 	@echo "  make              # Build and test all tools"
@@ -117,6 +126,10 @@ build-recon: build-dir
 build-discovery: build-dir
 	@echo "Building Discovery tools..."
 	@$(foreach tool,$(DISCOVERY_TOOLS),$(MAKE) --no-print-directory $(BIN_DIR)/$(notdir $(tool));)
+
+build-fingerprinting: build-dir
+	@echo "Building Fingerprinting tools..."
+	@$(foreach tool,$(FINGERPRINTING_TOOLS),$(MAKE) --no-print-directory $(BIN_DIR)/$(notdir $(tool));)
 
 # Run all unit tests
 test:
