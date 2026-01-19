@@ -41,15 +41,24 @@ Tools embed taxonomy mappings in their schema:
 {
   "taxonomy": {
     "node_type": "host",
-    "id_template": "host:{.ip}",
+    "identifying_properties": {
+      "ip": "$.ip"
+    },
     "properties": [
       {"source": "ip", "target": "ip"}
     ],
     "relationships": [
       {
         "type": "DISCOVERED",
-        "from_template": "agent_run:{_context.agent_run_id}",
-        "to_template": "host:{.ip}"
+        "from": {
+          "type": "agent_run",
+          "properties": {
+            "agent_run_id": "$._context.agent_run_id"
+          }
+        },
+        "to": {
+          "type": "self"
+        }
       }
     ]
   }
@@ -71,28 +80,55 @@ This allows Gibson to automatically:
 4. Add to Makefile
 
 ```go
-// Example tool structure
-type ToolOutput struct {
-    Targets []Target `json:"targets"`
-}
+// Example tool schema using SDK schema package
+import "github.com/zero-day-ai/sdk/schema"
 
-type Target struct {
-    IP       string `json:"ip"`
-    Hostname string `json:"hostname,omitempty"`
-}
-
-// Schema includes taxonomy
-func Schema() map[string]any {
-    return map[string]any{
-        "type": "object",
-        "taxonomy": map[string]any{
-            "node_type":   "host",
-            "id_template": "host:{.ip}",
-            // ...
+func OutputSchema() schema.JSON {
+    // Host schema with taxonomy mapping
+    hostSchema := schema.Object(map[string]schema.JSON{
+        "ip":       schema.String(),
+        "hostname": schema.String(),
+        "state":    schema.String(),
+    }).WithTaxonomy(schema.TaxonomyMapping{
+        NodeType: "host",
+        // IdentifyingProperties define what makes this node unique
+        IdentifyingProperties: map[string]string{
+            "ip": "ip",  // property name -> JSONPath in output
         },
-    }
+        // Regular properties to copy to the node
+        Properties: []schema.PropertyMapping{
+            schema.PropMap("ip", "ip"),
+            schema.PropMap("hostname", "hostname"),
+        },
+        // Relationships use NodeReference objects
+        Relationships: []schema.RelationshipMapping{
+            schema.Rel("DISCOVERED",
+                schema.Node("agent_run", map[string]string{
+                    "agent_run_id": "_context.agent_run_id",
+                }),
+                schema.SelfNode(),  // Current node being mapped
+            ),
+        },
+    })
+
+    return schema.Object(map[string]schema.JSON{
+        "hosts": schema.Array(hostSchema),
+    })
 }
 ```
+
+### Taxonomy API Reference
+
+**Key structs:**
+- `schema.TaxonomyMapping` - Defines how output maps to graph nodes
+- `schema.NodeReference` - References a node by type and identifying properties
+- `schema.PropertyMapping` - Maps source field to target property
+
+**Helper functions:**
+- `schema.PropMap(source, target)` - Create property mapping
+- `schema.Node(type, props)` - Create NodeReference to another node
+- `schema.SelfNode()` - Reference the current node being mapped
+- `schema.Rel(type, from, to)` - Create relationship between NodeReferences
 
 ### Building
 

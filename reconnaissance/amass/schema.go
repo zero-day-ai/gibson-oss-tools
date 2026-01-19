@@ -36,38 +36,64 @@ func InputSchema() schema.JSON {
 func OutputSchema() schema.JSON {
 	// Domain field with taxonomy for domain node creation
 	domainSchema := schema.String().WithTaxonomy(schema.TaxonomyMapping{
-		NodeType:   "domain",
-		IDTemplate: "domain:{.}",
+		NodeType: "domain",
+		IdentifyingProperties: map[string]string{
+			"name": "$.",
+		},
 		Properties: []schema.PropertyMapping{
 			schema.PropMap(".", "name"),
 		},
 		Relationships: []schema.RelationshipMapping{
-			schema.Rel("DISCOVERED", "agent_run:{_context.agent_run_id}", "domain:{.}"),
+			schema.Rel("DISCOVERED",
+				schema.Node("agent_run", map[string]string{
+					"agent_run_id": "$._context.agent_run_id",
+				}),
+				schema.SelfNode(),
+			),
 		},
 	})
 
 	// Subdomain schema - each string is a subdomain FQDN
 	subdomainSchema := schema.String().WithTaxonomy(schema.TaxonomyMapping{
-		NodeType:   "subdomain",
-		IDTemplate: "subdomain:{.}",
+		NodeType: "subdomain",
+		IdentifyingProperties: map[string]string{
+			"name": "$.",
+		},
 		Properties: []schema.PropertyMapping{
 			schema.PropMap(".", "name"),
 		},
 		Relationships: []schema.RelationshipMapping{
-			schema.Rel("HAS_SUBDOMAIN", "domain:{_root.domain}", "subdomain:{.}"),
-			schema.Rel("DISCOVERED", "agent_run:{_context.agent_run_id}", "subdomain:{.}"),
+			schema.Rel("HAS_SUBDOMAIN",
+				schema.Node("domain", map[string]string{
+					"name": "$._root.domain",
+				}),
+				schema.SelfNode(),
+			),
+			schema.Rel("DISCOVERED",
+				schema.Node("agent_run", map[string]string{
+					"agent_run_id": "$._context.agent_run_id",
+				}),
+				schema.SelfNode(),
+			),
 		},
 	})
 
 	// IP address schema - each string is a host IP
 	ipSchema := schema.String().WithTaxonomy(schema.TaxonomyMapping{
-		NodeType:   "host",
-		IDTemplate: "host:{.}",
+		NodeType: "host",
+		IdentifyingProperties: map[string]string{
+			"ip": "$.",
+		},
 		Properties: []schema.PropertyMapping{
 			schema.PropMap(".", "ip"),
 		},
 		Relationships: []schema.RelationshipMapping{
-			schema.Rel("DISCOVERED", "agent_run:{_context.agent_run_id}", "host:{.}"),
+			schema.Rel("DISCOVERED",
+				schema.Node("agent_run", map[string]string{
+					"agent_run_id": "$._context.agent_run_id",
+				}),
+				schema.SelfNode(),
+			),
 		},
 	})
 
@@ -75,7 +101,14 @@ func OutputSchema() schema.JSON {
 	asnIPSchema := schema.String().WithTaxonomy(schema.TaxonomyMapping{
 		// Create HOSTED_BY relationships from each IP to the parent ASN
 		Relationships: []schema.RelationshipMapping{
-			schema.Rel("HOSTED_BY", "host:{.}", "asn:{_parent.number}"),
+			schema.Rel("HOSTED_BY",
+				schema.Node("host", map[string]string{
+					"ip": "$.",
+				}),
+				schema.Node("asn", map[string]string{
+					"number": "$._parent.number",
+				}),
+			),
 		},
 	})
 
@@ -85,15 +118,22 @@ func OutputSchema() schema.JSON {
 		"country":     schema.String(),
 		"ips":         schema.Array(asnIPSchema),
 	}).WithTaxonomy(schema.TaxonomyMapping{
-		NodeType:   "asn",
-		IDTemplate: "asn:{.number}",
+		NodeType: "asn",
+		IdentifyingProperties: map[string]string{
+			"number": "$.number",
+		},
 		Properties: []schema.PropertyMapping{
 			schema.PropMap("number", "number"),
 			schema.PropMap("description", "description"),
 			schema.PropMap("country", "country"),
 		},
 		Relationships: []schema.RelationshipMapping{
-			schema.Rel("DISCOVERED", "agent_run:{_context.agent_run_id}", "asn:{.number}"),
+			schema.Rel("DISCOVERED",
+				schema.Node("agent_run", map[string]string{
+					"agent_run_id": "$._context.agent_run_id",
+				}),
+				schema.SelfNode(),
+			),
 		},
 	})
 
@@ -105,8 +145,12 @@ func OutputSchema() schema.JSON {
 		"priority": schema.Int(),
 		"ttl":      schema.Int(),
 	}).WithTaxonomy(schema.TaxonomyMapping{
-		NodeType:   "dns_record",
-		IDTemplate: "dns_record:{.name}:{.type}:{.value}",
+		NodeType: "dns_record",
+		IdentifyingProperties: map[string]string{
+			"name":  "$.name",
+			"type":  "$.type",
+			"value": "$.value",
+		},
 		Properties: []schema.PropertyMapping{
 			schema.PropMap("name", "name"),
 			schema.PropMap("type", "record_type"),
@@ -116,7 +160,12 @@ func OutputSchema() schema.JSON {
 		},
 		Relationships: []schema.RelationshipMapping{
 			// Link subdomain to DNS record
-			schema.Rel("HAS_DNS_RECORD", "subdomain:{.name}", "dns_record:{.name}:{.type}:{.value}"),
+			schema.Rel("HAS_DNS_RECORD",
+				schema.Node("subdomain", map[string]string{
+					"name": "$.name",
+				}),
+				schema.SelfNode(),
+			),
 		},
 	})
 

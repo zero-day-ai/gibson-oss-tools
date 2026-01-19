@@ -64,7 +64,9 @@ Example taxonomy from nmap's schema:
 {
   "taxonomy": {
     "node_type": "host",
-    "id_template": "host:{.ip}",
+    "identifying_properties": {
+      "ip": "$.ip"
+    },
     "properties": [
       {"source": "ip", "target": "ip"},
       {"source": "hostname", "target": "hostname"}
@@ -72,8 +74,15 @@ Example taxonomy from nmap's schema:
     "relationships": [
       {
         "type": "DISCOVERED",
-        "from_template": "agent_run:{_context.agent_run_id}",
-        "to_template": "host:{.ip}"
+        "from": {
+          "type": "agent_run",
+          "properties": {
+            "agent_run_id": "$._context.agent_run_id"
+          }
+        },
+        "to": {
+          "type": "self"
+        }
       }
     ]
   }

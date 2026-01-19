@@ -33,18 +33,22 @@ func OutputSchema() schema.JSON {
 		"cve":         schema.String(),
 		"description": schema.String(),
 	}).WithTaxonomy(schema.TaxonomyMapping{
-		NodeType:   "vulnerability",
-		IDTemplate: "vulnerability:{.id}:{_parent.target}",
+		NodeType: "vulnerability",
+		IdentifyingProperties: map[string]string{
+			"vulnerability_id": "id",
+			"target":           "_parent.target",
+		},
 		Properties: []schema.PropertyMapping{
-			schema.PropMap("id", "vulnerability_id"),
 			schema.PropMap("severity", "severity"),
 			schema.PropMap("finding", "finding"),
 			schema.PropMap("cve", "cve"),
 			schema.PropMap("description", "description"),
 		},
 		Relationships: []schema.RelationshipMapping{
-			// Link vulnerability to endpoint
-			schema.Rel("HAS_VULNERABILITY", "endpoint:{_parent.target}", "vulnerability:{.id}:{_parent.target}"),
+			// Link endpoint to vulnerability
+			schema.Rel("HAS_VULNERABILITY",
+				schema.Node("endpoint", map[string]string{"url": "_parent.target"}),
+				schema.SelfNode()),
 		},
 	})
 
@@ -71,10 +75,11 @@ func OutputSchema() schema.JSON {
 		"sans":       schema.Array(schema.String()),
 		"expired":    schema.Bool(),
 	}).WithTaxonomy(schema.TaxonomyMapping{
-		NodeType:   "certificate",
-		IDTemplate: "certificate:{.subject}",
+		NodeType: "certificate",
+		IdentifyingProperties: map[string]string{
+			"subject": "subject",
+		},
 		Properties: []schema.PropertyMapping{
-			schema.PropMap("subject", "subject"),
 			schema.PropMap("issuer", "issuer"),
 			schema.PropMap("not_before", "not_before"),
 			schema.PropMap("not_after", "not_after"),
@@ -82,8 +87,10 @@ func OutputSchema() schema.JSON {
 			schema.PropMap("expired", "expired"),
 		},
 		Relationships: []schema.RelationshipMapping{
-			// Link certificate to endpoint
-			schema.Rel("SERVED_BY", "certificate:{.subject}", "endpoint:{_parent.target}"),
+			// Link endpoint to certificate (reversed direction)
+			schema.Rel("SERVES_CERTIFICATE",
+				schema.Node("endpoint", map[string]string{"url": "_parent.target"}),
+				schema.SelfNode()),
 		},
 	})
 
@@ -97,18 +104,23 @@ func OutputSchema() schema.JSON {
 		"certificate":     certificateSchema,
 		"vulnerabilities": schema.Array(vulnerabilitySchema),
 	}).WithTaxonomy(schema.TaxonomyMapping{
-		NodeType:   "endpoint",
-		IDTemplate: "endpoint:{.target}",
+		NodeType: "endpoint",
+		IdentifyingProperties: map[string]string{
+			"url": "target",
+		},
 		Properties: []schema.PropertyMapping{
-			schema.PropMap("target", "url"),
 			schema.PropMap("ip", "ip"),
 			schema.PropMap("port", "port"),
 		},
 		Relationships: []schema.RelationshipMapping{
 			// Link agent run to discovered endpoint
-			schema.Rel("DISCOVERED", "agent_run:{_context.agent_run_id}", "endpoint:{.target}"),
+			schema.Rel("DISCOVERED",
+				schema.Node("agent_run", map[string]string{"agent_run_id": "_context.agent_run_id"}),
+				schema.SelfNode()),
 			// Link endpoint to certificate
-			schema.Rel("SERVES_CERTIFICATE", "endpoint:{.target}", "certificate:{.certificate.subject}"),
+			schema.Rel("SERVES_CERTIFICATE",
+				schema.SelfNode(),
+				schema.Node("certificate", map[string]string{"subject": "certificate.subject"})),
 		},
 	})
 

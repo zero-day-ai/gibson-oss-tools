@@ -65,8 +65,13 @@ func OutputSchema() schema.JSON {
 			Items:       &schema.JSON{Type: "string"},
 		},
 	}).WithTaxonomy(schema.TaxonomyMapping{
-		NodeType:   "service",
-		IDTemplate: "service:{_parent._parent.ip}:{_parent.port}:{.name}",
+		NodeType: "service",
+		IdentifyingProperties: map[string]string{
+			"host_id":  "_parent._parent.ip",
+			"port":     "_parent.port",
+			"protocol": "_parent.protocol",
+			"name":     "name",
+		},
 		Properties: []schema.PropertyMapping{
 			schema.PropMap("name", "name"),
 			schema.PropMap("product", "product"),
@@ -74,7 +79,14 @@ func OutputSchema() schema.JSON {
 			schema.PropMap("cpe", "cpe"),
 		},
 		Relationships: []schema.RelationshipMapping{
-			schema.Rel("RUNS_SERVICE", "port:{_parent._parent.ip}:{_parent.port}:{_parent.protocol}", "service:{_parent._parent.ip}:{_parent.port}:{.name}"),
+			schema.Rel("RUNS_SERVICE",
+				schema.Node("port", map[string]string{
+					"host_id":  "_parent._parent.ip",
+					"number":   "_parent.port",
+					"protocol": "_parent.protocol",
+				}),
+				schema.SelfNode(),
+			),
 		},
 	})
 
@@ -97,8 +109,12 @@ func OutputSchema() schema.JSON {
 		},
 		"service_details": serviceSchema,
 	}).WithTaxonomy(schema.TaxonomyMapping{
-		NodeType:   "port",
-		IDTemplate: "port:{_parent.ip}:{.port}:{.protocol}",
+		NodeType: "port",
+		IdentifyingProperties: map[string]string{
+			"host_id":  "_parent.ip",
+			"number":   "port",
+			"protocol": "protocol",
+		},
 		Properties: []schema.PropertyMapping{
 			schema.PropMap("port", "number"),
 			schema.PropMap("protocol", "protocol"),
@@ -108,7 +124,12 @@ func OutputSchema() schema.JSON {
 			schema.PropMap("cpe", "cpe"),
 		},
 		Relationships: []schema.RelationshipMapping{
-			schema.Rel("HAS_PORT", "host:{_parent.ip}", "port:{_parent.ip}:{.port}:{.protocol}"),
+			schema.Rel("HAS_PORT",
+				schema.Node("host", map[string]string{
+					"ip": "_parent.ip",
+				}),
+				schema.SelfNode(),
+			),
 		},
 	})
 
@@ -132,8 +153,10 @@ func OutputSchema() schema.JSON {
 		},
 		"ports": schema.Array(portSchema),
 	}).WithTaxonomy(schema.TaxonomyMapping{
-		NodeType:   "host",
-		IDTemplate: "host:{.ip}",
+		NodeType: "host",
+		IdentifyingProperties: map[string]string{
+			"ip": "ip",
+		},
 		Properties: []schema.PropertyMapping{
 			schema.PropMap("ip", "ip"),
 			schema.PropMap("hostname", "hostname"),
@@ -144,7 +167,12 @@ func OutputSchema() schema.JSON {
 			schema.PropMap("os_vendor", "os_vendor"),
 		},
 		Relationships: []schema.RelationshipMapping{
-			schema.Rel("DISCOVERED", "agent_run:{_context.agent_run_id}", "host:{.ip}"),
+			schema.Rel("DISCOVERED",
+				schema.Node("agent_run", map[string]string{
+					"agent_run_id": "_context.agent_run_id",
+				}),
+				schema.SelfNode(),
+			),
 		},
 	})
 

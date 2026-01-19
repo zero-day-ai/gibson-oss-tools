@@ -56,8 +56,11 @@ func OutputSchema() schema.JSON {
 		"port":          schema.Int(),    // Extracted port from matched_at URL
 		"scheme":        schema.String(), // http or https
 	}).WithTaxonomy(schema.TaxonomyMapping{
-		NodeType:   "finding",
-		IDTemplate: "finding:{.template_id}:{.matched_at}",
+		NodeType: "finding",
+		IdentifyingProperties: map[string]string{
+			"template_id": "$.template_id",
+			"matched_at":  "$.matched_at",
+		},
 		Properties: []schema.PropertyMapping{
 			schema.PropMap("template_id", "template_id"),
 			schema.PropMap("template_name", "title"),
@@ -78,14 +81,32 @@ func OutputSchema() schema.JSON {
 		},
 		Relationships: []schema.RelationshipMapping{
 			// Link finding to affected endpoint (if httpx discovered it)
-			schema.Rel("AFFECTS", "finding:{.template_id}:{.matched_at}", "endpoint:{.matched_at}"),
+			schema.Rel("AFFECTS",
+				schema.SelfNode(),
+				schema.Node("endpoint", map[string]string{
+					"url": "$.matched_at",
+				})),
 			// Cross-tool relationship: Link finding to underlying port from nmap/masscan
 			// This enables attack chain traversal: finding → port → host
-			schema.Rel("AFFECTS", "finding:{.template_id}:{.matched_at}", "port:{.host}:{.port}:tcp"),
+			schema.Rel("AFFECTS",
+				schema.SelfNode(),
+				schema.Node("port", map[string]string{
+					"host":     "$.host",
+					"port":     "$.port",
+					"protocol": "tcp",
+				})),
 			// Direct link to host for easier traversal
-			schema.Rel("AFFECTS", "finding:{.template_id}:{.matched_at}", "host:{.host}"),
+			schema.Rel("AFFECTS",
+				schema.SelfNode(),
+				schema.Node("host", map[string]string{
+					"ip": "$.host",
+				})),
 			// Link agent run to discovered finding
-			schema.Rel("DISCOVERED", "agent_run:{_context.agent_run_id}", "finding:{.template_id}:{.matched_at}"),
+			schema.Rel("DISCOVERED",
+				schema.Node("agent_run", map[string]string{
+					"agent_run_id": "$._context.agent_run_id",
+				}),
+				schema.SelfNode()),
 		},
 	})
 

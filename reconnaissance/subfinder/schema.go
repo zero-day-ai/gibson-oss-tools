@@ -34,24 +34,33 @@ func InputSchema() schema.JSON {
 func OutputSchema() schema.JSON {
 	// IP address schema with taxonomy for host node creation
 	ipSchema := schema.String().WithTaxonomy(schema.TaxonomyMapping{
-		NodeType:   "host",
-		IDTemplate: "host:{.}",
+		NodeType: "host",
+		IdentifyingProperties: map[string]string{
+			"ip": ".",
+		},
 		Properties: []schema.PropertyMapping{
 			schema.PropMap(".", "ip_address"),
 		},
 		Relationships: []schema.RelationshipMapping{
-			schema.Rel("DISCOVERED", "agent_run:{_context.agent_run_id}", "host:{.}"),
+			schema.Rel("DISCOVERED",
+				schema.Node("agent_run", map[string]string{
+					"agent_run_id": "_context.agent_run_id",
+				}),
+				schema.SelfNode(),
+			),
 		},
 	})
 
 	// Subdomain schema - each object contains name, ips, and sources
 	subdomainSchema := schema.Object(map[string]schema.JSON{
-		"name": schema.String(),
-		"ips":  schema.Array(ipSchema),
+		"name":    schema.String(),
+		"ips":     schema.Array(ipSchema),
 		"sources": schema.Array(schema.String()),
 	}).WithTaxonomy(schema.TaxonomyMapping{
-		NodeType:   "subdomain",
-		IDTemplate: "subdomain:{.name}",
+		NodeType: "subdomain",
+		IdentifyingProperties: map[string]string{
+			"name": "name",
+		},
 		Properties: []schema.PropertyMapping{
 			schema.PropMap("name", "name"),
 			schema.PropMap("ips", "ip_addresses"),
@@ -59,23 +68,45 @@ func OutputSchema() schema.JSON {
 		},
 		Relationships: []schema.RelationshipMapping{
 			// Link subdomain to parent domain (from root output)
-			schema.Rel("HAS_SUBDOMAIN", "domain:{_root.domain}", "subdomain:{.name}"),
+			schema.Rel("HAS_SUBDOMAIN",
+				schema.Node("domain", map[string]string{
+					"name": "_root.domain",
+				}),
+				schema.SelfNode(),
+			),
 			// Link agent run to discovered subdomain
-			schema.Rel("DISCOVERED", "agent_run:{_context.agent_run_id}", "subdomain:{.name}"),
+			schema.Rel("DISCOVERED",
+				schema.Node("agent_run", map[string]string{
+					"agent_run_id": "_context.agent_run_id",
+				}),
+				schema.SelfNode(),
+			),
 			// Link subdomain to resolved IPs
-			schema.Rel("RESOLVES_TO", "subdomain:{.name}", "host:{.ips[*]}"),
+			schema.Rel("RESOLVES_TO",
+				schema.SelfNode(),
+				schema.Node("host", map[string]string{
+					"ip": "ips[*]",
+				}),
+			),
 		},
 	})
 
 	// Domain field with taxonomy for domain node creation
 	domainSchema := schema.String().WithTaxonomy(schema.TaxonomyMapping{
-		NodeType:   "domain",
-		IDTemplate: "domain:{.}",
+		NodeType: "domain",
+		IdentifyingProperties: map[string]string{
+			"name": ".",
+		},
 		Properties: []schema.PropertyMapping{
 			schema.PropMap(".", "name"),
 		},
 		Relationships: []schema.RelationshipMapping{
-			schema.Rel("DISCOVERED", "agent_run:{_context.agent_run_id}", "domain:{.}"),
+			schema.Rel("DISCOVERED",
+				schema.Node("agent_run", map[string]string{
+					"agent_run_id": "_context.agent_run_id",
+				}),
+				schema.SelfNode(),
+			),
 		},
 	})
 

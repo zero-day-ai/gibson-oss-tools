@@ -43,14 +43,21 @@ func OutputSchema() schema.JSON {
 	// Technology schema - each string in the array is a technology name
 	// Since technologies are simple strings, we create nodes from them
 	technologySchema := schema.String().WithTaxonomy(schema.TaxonomyMapping{
-		NodeType:   "technology",
-		IDTemplate: "technology:{.}", // {.} refers to the string value itself
+		NodeType: "technology",
+		IdentifyingProperties: map[string]string{
+			"name": ".", // "." refers to the string value itself
+		},
 		Properties: []schema.PropertyMapping{
 			schema.PropMap(".", "name"),
 		},
 		Relationships: []schema.RelationshipMapping{
 			// Link endpoint to technology
-			schema.Rel("USES_TECHNOLOGY", "endpoint:{_parent.url}", "technology:{.}"),
+			schema.Rel("USES_TECHNOLOGY",
+				schema.Node("endpoint", map[string]string{
+					"url": "_parent.url",
+				}),
+				schema.SelfNode(),
+			),
 		},
 	})
 
@@ -61,8 +68,10 @@ func OutputSchema() schema.JSON {
 		"expiry":  schema.String(),
 		"sans":    schema.Array(schema.String()),
 	}).WithTaxonomy(schema.TaxonomyMapping{
-		NodeType:   "certificate",
-		IDTemplate: "certificate:{.subject}",
+		NodeType: "certificate",
+		IdentifyingProperties: map[string]string{
+			"subject": "subject",
+		},
 		Properties: []schema.PropertyMapping{
 			schema.PropMap("issuer", "issuer"),
 			schema.PropMap("subject", "subject"),
@@ -71,7 +80,12 @@ func OutputSchema() schema.JSON {
 		},
 		Relationships: []schema.RelationshipMapping{
 			// Link certificate back to the endpoint that serves it
-			schema.Rel("SERVED_BY", "certificate:{.subject}", "endpoint:{_parent.url}"),
+			schema.Rel("SERVED_BY",
+				schema.SelfNode(),
+				schema.Node("endpoint", map[string]string{
+					"url": "_parent.url",
+				}),
+			),
 		},
 	})
 
@@ -105,8 +119,10 @@ func OutputSchema() schema.JSON {
 		"port":             schema.Int(),      // Extracted port from URL (for cross-tool linking)
 		"scheme":           schema.String(),   // http or https (for protocol detection)
 	}).WithTaxonomy(schema.TaxonomyMapping{
-		NodeType:   "endpoint",
-		IDTemplate: "endpoint:{.url}",
+		NodeType: "endpoint",
+		IdentifyingProperties: map[string]string{
+			"url": "url",
+		},
 		Properties: []schema.PropertyMapping{
 			schema.PropMap("url", "url"),
 			schema.PropMap("status_code", "status_code"),
@@ -125,14 +141,36 @@ func OutputSchema() schema.JSON {
 		},
 		Relationships: []schema.RelationshipMapping{
 			// Link agent run to discovered endpoint
-			schema.Rel("DISCOVERED", "agent_run:{_context.agent_run_id}", "endpoint:{.url}"),
+			schema.Rel("DISCOVERED",
+				schema.Node("agent_run", map[string]string{
+					"agent_run_id": "_context.agent_run_id",
+				}),
+				schema.SelfNode(),
+			),
 			// Link endpoint to certificate (when certificate data is present)
-			schema.Rel("SERVES_CERTIFICATE", "endpoint:{.url}", "certificate:{.certificate.subject}"),
+			schema.Rel("SERVES_CERTIFICATE",
+				schema.SelfNode(),
+				schema.Node("certificate", map[string]string{
+					"subject": "certificate.subject",
+				}),
+			),
 			// Cross-tool relationship: Link endpoint to underlying port from nmap/masscan
 			// This enables attack chain traversal: subdomain → host → port → endpoint
-			schema.Rel("HAS_ENDPOINT", "port:{.host}:{.port}:tcp", "endpoint:{.url}"),
+			schema.Rel("HAS_ENDPOINT",
+				schema.Node("port", map[string]string{
+					"host":     "host",
+					"port":     "port",
+					"protocol": "tcp",
+				}),
+				schema.SelfNode(),
+			),
 			// Direct link to host for easier traversal
-			schema.Rel("HOSTED_ON", "endpoint:{.url}", "host:{.host}"),
+			schema.Rel("HOSTED_ON",
+				schema.SelfNode(),
+				schema.Node("host", map[string]string{
+					"host": "host",
+				}),
+			),
 		},
 	})
 

@@ -32,8 +32,10 @@ func OutputSchema() schema.JSON {
 		"categories": schema.Array(schema.String()),
 		"string":     schema.Array(schema.String()),
 	}).WithTaxonomy(schema.TaxonomyMapping{
-		NodeType:   "technology",
-		IDTemplate: "technology:{.name}",
+		NodeType: "technology",
+		IdentifyingProperties: map[string]string{
+			"name": "$.name",
+		},
 		Properties: []schema.PropertyMapping{
 			schema.PropMap("name", "name"),
 			schema.PropMap("version", "version"),
@@ -41,7 +43,13 @@ func OutputSchema() schema.JSON {
 		},
 		Relationships: []schema.RelationshipMapping{
 			// Link endpoint to technology
-			schema.Rel("USES_TECHNOLOGY", "endpoint:{_parent.target}", "technology:{.name}"),
+			schema.Rel(
+				"USES_TECHNOLOGY",
+				schema.Node("endpoint", map[string]string{
+					"url": "$._parent.target",
+				}),
+				schema.SelfNode(),
+			),
 		},
 	})
 
@@ -54,8 +62,10 @@ func OutputSchema() schema.JSON {
 		"ip":          schema.String(),
 		"host":        schema.String(),
 	}).WithTaxonomy(schema.TaxonomyMapping{
-		NodeType:   "endpoint",
-		IDTemplate: "endpoint:{.target}",
+		NodeType: "endpoint",
+		IdentifyingProperties: map[string]string{
+			"url": "$.target",
+		},
 		Properties: []schema.PropertyMapping{
 			schema.PropMap("target", "url"),
 			schema.PropMap("http_status", "status_code"),
@@ -65,9 +75,21 @@ func OutputSchema() schema.JSON {
 		},
 		Relationships: []schema.RelationshipMapping{
 			// Link agent run to discovered endpoint
-			schema.Rel("DISCOVERED", "agent_run:{_context.agent_run_id}", "endpoint:{.target}"),
+			schema.Rel(
+				"DISCOVERED",
+				schema.Node("agent_run", map[string]string{
+					"agent_run_id": "$._context.agent_run_id",
+				}),
+				schema.SelfNode(),
+			),
 			// Link endpoint to host
-			schema.Rel("HOSTED_ON", "endpoint:{.target}", "host:{.host}"),
+			schema.Rel(
+				"HOSTED_ON",
+				schema.SelfNode(),
+				schema.Node("host", map[string]string{
+					"hostname": "$.host",
+				}),
+			),
 		},
 	})
 
