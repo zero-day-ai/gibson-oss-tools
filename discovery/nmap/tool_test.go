@@ -99,7 +99,7 @@ func TestParseOutput(t *testing.T) {
 	t.Run("parse error should have semantic class", func(t *testing.T) {
 		// Test with invalid XML
 		invalidXML := []byte("this is not valid XML")
-		_, err := parseOutput(invalidXML, "test-target")
+		_, err := parseOutput(invalidXML)
 
 		if err == nil {
 			t.Fatal("expected error from invalid XML, got nil")
@@ -131,84 +131,75 @@ func TestParseOutput(t *testing.T) {
 	</host>
 </nmaprun>`)
 
-		output, err := parseOutput(validXML, "192.168.1.1")
+		result, err := parseOutput(validXML)
 		if err != nil {
 			t.Fatalf("unexpected error parsing valid XML: %v", err)
 		}
 
-		// Validate output structure
-		if output["target"] != "192.168.1.1" {
-			t.Errorf("expected target=192.168.1.1, got %v", output["target"])
+		// Validate host
+		if len(result.Hosts) != 1 {
+			t.Fatalf("expected 1 host, got %d", len(result.Hosts))
 		}
 
-		hosts, ok := output["hosts"].([]map[string]any)
-		if !ok {
-			t.Fatalf("expected hosts to be []map[string]any, got %T", output["hosts"])
+		host := result.Hosts[0]
+		if host.IP != "192.168.1.1" {
+			t.Errorf("expected ip=192.168.1.1, got %v", host.IP)
 		}
 
-		if len(hosts) != 1 {
-			t.Fatalf("expected 1 host, got %d", len(hosts))
+		if host.Hostname != "test.local" {
+			t.Errorf("expected hostname=test.local, got %v", host.Hostname)
 		}
 
-		host := hosts[0]
-		if host["ip"] != "192.168.1.1" {
-			t.Errorf("expected ip=192.168.1.1, got %v", host["ip"])
+		if host.State != "up" {
+			t.Errorf("expected state=up, got %v", host.State)
 		}
 
-		if host["hostname"] != "test.local" {
-			t.Errorf("expected hostname=test.local, got %v", host["hostname"])
+		if host.OS != "Linux 5.4" {
+			t.Errorf("expected os='Linux 5.4', got %v", host.OS)
 		}
 
-		if host["state"] != "up" {
-			t.Errorf("expected state=up, got %v", host["state"])
+		// Validate port
+		if len(result.Ports) != 1 {
+			t.Fatalf("expected 1 port, got %d", len(result.Ports))
 		}
 
-		if host["os"] != "Linux 5.4" {
-			t.Errorf("expected os='Linux 5.4', got %v", host["os"])
+		port := result.Ports[0]
+		if port.HostID != "192.168.1.1" {
+			t.Errorf("expected hostID=192.168.1.1, got %v", port.HostID)
 		}
 
-		ports, ok := host["ports"].([]map[string]any)
-		if !ok {
-			t.Fatalf("expected ports to be []map[string]any, got %T", host["ports"])
+		if port.Number != 80 {
+			t.Errorf("expected port=80, got %v", port.Number)
 		}
 
-		if len(ports) != 1 {
-			t.Fatalf("expected 1 port, got %d", len(ports))
+		if port.Protocol != "tcp" {
+			t.Errorf("expected protocol=tcp, got %v", port.Protocol)
 		}
 
-		port := ports[0]
-		if port["port"] != 80 {
-			t.Errorf("expected port=80, got %v", port["port"])
+		if port.State != "open" {
+			t.Errorf("expected state=open, got %v", port.State)
 		}
 
-		if port["service"] != "http" {
-			t.Errorf("expected service=http, got %v", port["service"])
+		// Validate service
+		if len(result.Services) != 1 {
+			t.Fatalf("expected 1 service, got %d", len(result.Services))
 		}
 
-		if port["version"] != "nginx 1.20.0" {
-			t.Errorf("expected version='nginx 1.20.0', got %v", port["version"])
+		service := result.Services[0]
+		if service.PortID != "192.168.1.1:80:tcp" {
+			t.Errorf("expected portID=192.168.1.1:80:tcp, got %v", service.PortID)
 		}
 
-		// Verify service_details is populated for graph creation
-		serviceDetails, ok := port["service_details"].(map[string]any)
-		if !ok {
-			t.Fatalf("expected service_details to be map[string]any, got %T", port["service_details"])
+		if service.Name != "http" {
+			t.Errorf("expected service name=http, got %v", service.Name)
 		}
 
-		if serviceDetails["name"] != "http" {
-			t.Errorf("expected service_details.name=http, got %v", serviceDetails["name"])
-		}
-
-		if serviceDetails["product"] != "nginx" {
-			t.Errorf("expected service_details.product=nginx, got %v", serviceDetails["product"])
-		}
-
-		if serviceDetails["version"] != "1.20.0" {
-			t.Errorf("expected service_details.version=1.20.0, got %v", serviceDetails["version"])
+		if service.Version != "nginx 1.20.0" {
+			t.Errorf("expected version='nginx 1.20.0', got %v", service.Version)
 		}
 	})
 
-	t.Run("service_details should not be created when service name is empty", func(t *testing.T) {
+	t.Run("service should not be created when service name is empty", func(t *testing.T) {
 		xmlWithNoService := []byte(`<?xml version="1.0"?>
 <nmaprun>
 	<host>
@@ -223,22 +214,23 @@ func TestParseOutput(t *testing.T) {
 	</host>
 </nmaprun>`)
 
-		output, err := parseOutput(xmlWithNoService, "192.168.1.1")
+		result, err := parseOutput(xmlWithNoService)
 		if err != nil {
 			t.Fatalf("unexpected error parsing XML: %v", err)
 		}
 
-		hosts := output["hosts"].([]map[string]any)
-		ports := hosts[0]["ports"].([]map[string]any)
-		port := ports[0]
+		// Port should exist but service should not
+		if len(result.Ports) != 1 {
+			t.Fatalf("expected 1 port, got %d", len(result.Ports))
+		}
 
-		if _, exists := port["service_details"]; exists {
-			t.Errorf("service_details should not exist when service name is empty")
+		if len(result.Services) != 0 {
+			t.Errorf("expected 0 services when service name is empty, got %d", len(result.Services))
 		}
 	})
 
-	t.Run("service_details should include CPE when present", func(t *testing.T) {
-		xmlWithCPE := []byte(`<?xml version="1.0"?>
+	t.Run("multiple ports with services", func(t *testing.T) {
+		xmlWithMultiplePorts := []byte(`<?xml version="1.0"?>
 <nmaprun>
 	<host>
 		<status state="up"/>
@@ -246,32 +238,47 @@ func TestParseOutput(t *testing.T) {
 		<ports>
 			<port protocol="tcp" portid="22">
 				<state state="open"/>
-				<service name="ssh" product="OpenSSH" version="8.2p1">
-					<cpe>cpe:/a:openbsd:openssh:8.2p1</cpe>
-				</service>
+				<service name="ssh" product="OpenSSH" version="8.2p1"/>
+			</port>
+			<port protocol="tcp" portid="80">
+				<state state="open"/>
+				<service name="http" product="nginx" version="1.20.0"/>
 			</port>
 		</ports>
 	</host>
 </nmaprun>`)
 
-		output, err := parseOutput(xmlWithCPE, "192.168.1.1")
+		result, err := parseOutput(xmlWithMultiplePorts)
 		if err != nil {
 			t.Fatalf("unexpected error parsing XML: %v", err)
 		}
 
-		hosts := output["hosts"].([]map[string]any)
-		ports := hosts[0]["ports"].([]map[string]any)
-		port := ports[0]
-
-		serviceDetails := port["service_details"].(map[string]any)
-		cpe := serviceDetails["cpe"].([]string)
-
-		if len(cpe) != 1 {
-			t.Fatalf("expected 1 CPE, got %d", len(cpe))
+		if len(result.Ports) != 2 {
+			t.Fatalf("expected 2 ports, got %d", len(result.Ports))
 		}
 
-		if cpe[0] != "cpe:/a:openbsd:openssh:8.2p1" {
-			t.Errorf("expected CPE='cpe:/a:openbsd:openssh:8.2p1', got %v", cpe[0])
+		if len(result.Services) != 2 {
+			t.Fatalf("expected 2 services, got %d", len(result.Services))
+		}
+
+		// Check first service (SSH)
+		sshService := result.Services[0]
+		if sshService.Name != "ssh" {
+			t.Errorf("expected first service name=ssh, got %v", sshService.Name)
+		}
+
+		if sshService.PortID != "192.168.1.1:22:tcp" {
+			t.Errorf("expected SSH portID=192.168.1.1:22:tcp, got %v", sshService.PortID)
+		}
+
+		// Check second service (HTTP)
+		httpService := result.Services[1]
+		if httpService.Name != "http" {
+			t.Errorf("expected second service name=http, got %v", httpService.Name)
+		}
+
+		if httpService.PortID != "192.168.1.1:80:tcp" {
+			t.Errorf("expected HTTP portID=192.168.1.1:80:tcp, got %v", httpService.PortID)
 		}
 	})
 }

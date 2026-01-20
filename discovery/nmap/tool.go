@@ -8,8 +8,10 @@ import (
 	"time"
 
 	"github.com/zero-day-ai/sdk/exec"
+	"github.com/zero-day-ai/sdk/graphrag/domain"
 	"github.com/zero-day-ai/sdk/health"
 	sdkinput "github.com/zero-day-ai/sdk/input"
+	"github.com/zero-day-ai/sdk/schema"
 	"github.com/zero-day-ai/sdk/tool"
 	"github.com/zero-day-ai/sdk/toolerr"
 	"github.com/zero-day-ai/sdk/types"
@@ -21,6 +23,48 @@ const (
 	ToolDescription = "Network exploration tool and security/port scanner"
 	BinaryName      = "nmap"
 )
+
+// InputSchema returns the JSON schema for nmap tool input.
+func InputSchema() schema.JSON {
+	return schema.Object(map[string]schema.JSON{
+		"target": schema.StringWithDesc("Target host, IP, or CIDR range to scan (required)"),
+		"ports": schema.JSON{
+			Type:        "string",
+			Description: "Port specification (e.g., '22,80,443' or '1-1000')",
+			Default:     "1-1000",
+		},
+		"scan_type": schema.JSON{
+			Type:        "string",
+			Description: "Scan type: connect (default, no root), syn (requires root), udp, ack, window, maimon, ping (host discovery only, no port scan)",
+			Enum:        []any{"connect", "syn", "udp", "ack", "window", "maimon", "ping"},
+			Default:     "connect",
+		},
+		"service_detection": schema.JSON{
+			Type:        "boolean",
+			Description: "Enable service/version detection",
+			Default:     true,
+		},
+		"os_detection": schema.JSON{
+			Type:        "boolean",
+			Description: "Enable OS detection",
+			Default:     false,
+		},
+		"scripts": schema.JSON{
+			Type:        "array",
+			Description: "NSE scripts to run (optional)",
+			Items:       &schema.JSON{Type: "string"},
+		},
+		"timing": schema.JSON{
+			Type:        "integer",
+			Description: "Timing template (0-5, higher is faster)",
+			Default:     3,
+		},
+		"timeout": schema.JSON{
+			Type:        "integer",
+			Description: "Execution timeout in seconds (optional)",
+		},
+	}, "target") // target is required
+}
 
 // ToolImpl implements the nmap tool
 type ToolImpl struct{}
@@ -39,7 +83,6 @@ func NewTool() tool.Tool {
 			"T1595", // Active Scanning
 		}).
 		SetInputSchema(InputSchema()).
-		SetOutputSchema(OutputSchema()).
 		SetExecuteFunc((&ToolImpl{}).Execute)
 
 	t, _ := tool.New(cfg)
@@ -92,16 +135,27 @@ func (t *ToolImpl) Execute(ctx context.Context, input map[string]any) (map[strin
 			WithClass(errClass)
 	}
 
-	// Parse nmap XML output
-	output, err := parseOutput(result.Stdout, target)
+	// Parse nmap XML output to domain types
+	discoveryResult, err := parseOutput(result.Stdout)
 	if err != nil {
 		return nil, toolerr.New(ToolName, "parse", toolerr.ErrCodeParseError, err.Error()).
 			WithCause(err).
 			WithClass(toolerr.ErrorClassSemantic)
 	}
 
-	// Add scan time
-	output["scan_time_ms"] = int(time.Since(startTime).Milliseconds())
+	// Convert DiscoveryResult to map for tool output
+	// Include metadata about the scan
+	scanTime := int(time.Since(startTime).Milliseconds())
+	output := map[string]any{
+		"discovery_result": discoveryResult,
+		"metadata": map[string]any{
+			"target":       target,
+			"scan_time_ms": scanTime,
+			"total_hosts":  len(discoveryResult.Hosts),
+			"total_ports":  len(discoveryResult.Ports),
+			"total_services": len(discoveryResult.Services),
+		},
+	}
 
 	return output, nil
 }
@@ -242,21 +296,16 @@ type NmapOSClass struct {
 	Accuracy string `xml:"accuracy,attr"`
 }
 
-// parseOutput parses the XML output from nmap
-func parseOutput(data []byte, target string) (map[string]any, error) {
+// parseOutput parses the XML output from nmap and returns domain types
+func parseOutput(data []byte) (*domain.DiscoveryResult, error) {
 	var nmapRun NmapRun
 	if err := xml.Unmarshal(data, &nmapRun); err != nil {
 		return nil, fmt.Errorf("failed to parse nmap XML: %w", err)
 	}
 
-	hosts := []map[string]any{}
-	hostsUp := 0
+	result := domain.NewDiscoveryResult()
 
 	for _, host := range nmapRun.Hosts {
-		if host.Status.State == "up" {
-			hostsUp++
-		}
-
 		// Get IP address
 		ip := ""
 		for _, addr := range host.Addresses {
@@ -264,6 +313,11 @@ func parseOutput(data []byte, target string) (map[string]any, error) {
 				ip = addr.Addr
 				break
 			}
+		}
+
+		// Skip if no IP address found
+		if ip == "" {
+			continue
 		}
 
 		// Get hostname
@@ -274,111 +328,57 @@ func parseOutput(data []byte, target string) (map[string]any, error) {
 
 		// Get OS information
 		os := ""
-		osAccuracy := 0
-		osFamily := ""
-		osVendor := ""
 		if len(host.OS.OSMatches) > 0 {
 			os = host.OS.OSMatches[0].Name
-			// Parse accuracy as integer
-			if acc := host.OS.OSMatches[0].Accuracy; acc != "" {
-				fmt.Sscanf(acc, "%d", &osAccuracy)
-			}
-			// Get OS class details from first match if available
-			if len(host.OS.OSMatches[0].OSClasses) > 0 {
-				osFamily = host.OS.OSMatches[0].OSClasses[0].Family
-				osVendor = host.OS.OSMatches[0].OSClasses[0].Vendor
-			}
 		}
 
-		// Get ports
-		ports := []map[string]any{}
+		// Create Host node
+		hostNode := &domain.Host{
+			IP:       ip,
+			Hostname: hostname,
+			State:    host.Status.State,
+			OS:       os,
+		}
+		result.Hosts = append(result.Hosts, hostNode)
+
+		// Process ports
 		for _, port := range host.Ports {
-			version := port.Service.Product
-			if port.Service.Version != "" {
-				version = fmt.Sprintf("%s %s", version, port.Service.Version)
+			// Create Port node
+			portNode := &domain.Port{
+				HostID:   ip,
+				Number:   port.PortID,
+				Protocol: port.Protocol,
+				State:    port.State.State,
 			}
+			result.Ports = append(result.Ports, portNode)
 
-			// Extract CPE identifiers
-			cpe := []string{}
-			if len(port.Service.CPE) > 0 {
-				cpe = port.Service.CPE
-			}
-
-			// Extract NSE script results
-			scripts := []map[string]any{}
-			for _, script := range port.Scripts {
-				scripts = append(scripts, map[string]any{
-					"id":     script.ID,
-					"output": script.Output,
-				})
-			}
-
-			portResult := map[string]any{
-				"port":     port.PortID,
-				"protocol": port.Protocol,
-				"state":    port.State.State,
-				"service":  port.Service.Name,
-				"version":  strings.TrimSpace(version),
-			}
-
-			// Only include CPE if present
-			if len(cpe) > 0 {
-				portResult["cpe"] = cpe
-			}
-
-			// Only include scripts if present
-			if len(scripts) > 0 {
-				portResult["scripts"] = scripts
-			}
-
-			// Add service details for graph creation if service name is present
+			// Create Service node if service information is available
 			if port.Service.Name != "" {
-				serviceDetails := map[string]any{
-					"name": port.Service.Name,
-				}
-				if port.Service.Product != "" {
-					serviceDetails["product"] = port.Service.Product
-				}
+				// Construct PortID in format "{host_id}:{number}:{protocol}"
+				portID := fmt.Sprintf("%s:%d:%s", ip, port.PortID, port.Protocol)
+
+				// Build version string
+				version := strings.TrimSpace(port.Service.Product)
 				if port.Service.Version != "" {
-					serviceDetails["version"] = port.Service.Version
+					if version != "" {
+						version = fmt.Sprintf("%s %s", version, port.Service.Version)
+					} else {
+						version = port.Service.Version
+					}
 				}
-				if len(cpe) > 0 {
-					serviceDetails["cpe"] = cpe
+
+				serviceNode := &domain.Service{
+					PortID:  portID,
+					Name:    port.Service.Name,
+					Version: version,
+					Banner:  "", // nmap doesn't provide banner directly, could be extracted from scripts
 				}
-				portResult["service_details"] = serviceDetails
+				result.Services = append(result.Services, serviceNode)
 			}
-
-			ports = append(ports, portResult)
 		}
-
-		hostResult := map[string]any{
-			"ip":       ip,
-			"hostname": hostname,
-			"state":    host.Status.State,
-			"os":       os,
-			"ports":    ports,
-		}
-
-		// Only include OS details if available
-		if osAccuracy > 0 {
-			hostResult["os_accuracy"] = osAccuracy
-		}
-		if osFamily != "" {
-			hostResult["os_family"] = osFamily
-		}
-		if osVendor != "" {
-			hostResult["os_vendor"] = osVendor
-		}
-
-		hosts = append(hosts, hostResult)
 	}
 
-	return map[string]any{
-		"target":      target,
-		"hosts":       hosts,
-		"total_hosts": len(hosts),
-		"hosts_up":    hostsUp,
-	}, nil
+	return result, nil
 }
 
 // classifyExecutionError determines the error class based on the underlying error

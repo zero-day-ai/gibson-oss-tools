@@ -38,28 +38,9 @@ func InputSchema() schema.JSON {
 }
 
 // OutputSchema returns the JSON schema for httpx tool output.
-// Includes embedded taxonomy mappings for GraphRAG integration.
 func OutputSchema() schema.JSON {
 	// Technology schema - each string in the array is a technology name
-	// Since technologies are simple strings, we create nodes from them
-	technologySchema := schema.String().WithTaxonomy(schema.TaxonomyMapping{
-		NodeType: "technology",
-		IdentifyingProperties: map[string]string{
-			"name": ".", // "." refers to the string value itself
-		},
-		Properties: []schema.PropertyMapping{
-			schema.PropMap(".", "name"),
-		},
-		Relationships: []schema.RelationshipMapping{
-			// Link endpoint to technology
-			schema.Rel("USES_TECHNOLOGY",
-				schema.Node("endpoint", map[string]string{
-					"url": "_parent.url",
-				}),
-				schema.SelfNode(),
-			),
-		},
-	})
+	technologySchema := schema.String()
 
 	// Certificate schema - created when cert_issuer is present (HTTPS only)
 	certificateSchema := schema.Object(map[string]schema.JSON{
@@ -67,26 +48,6 @@ func OutputSchema() schema.JSON {
 		"subject": schema.String(),
 		"expiry":  schema.String(),
 		"sans":    schema.Array(schema.String()),
-	}).WithTaxonomy(schema.TaxonomyMapping{
-		NodeType: "certificate",
-		IdentifyingProperties: map[string]string{
-			"subject": "subject",
-		},
-		Properties: []schema.PropertyMapping{
-			schema.PropMap("issuer", "issuer"),
-			schema.PropMap("subject", "subject"),
-			schema.PropMap("expiry", "expiry"),
-			schema.PropMap("sans", "subject_alternative_names"),
-		},
-		Relationships: []schema.RelationshipMapping{
-			// Link certificate back to the endpoint that serves it
-			schema.Rel("SERVED_BY",
-				schema.SelfNode(),
-				schema.Node("endpoint", map[string]string{
-					"url": "_parent.url",
-				}),
-			),
-		},
 	})
 
 	// Redirect hop schema
@@ -98,7 +59,7 @@ func OutputSchema() schema.JSON {
 	// Response headers schema - generic object for dynamic headers
 	responseHeadersSchema := schema.Object(map[string]schema.JSON{})
 
-	// Result/endpoint schema with taxonomy
+	// Result/endpoint schema
 	resultSchema := schema.Object(map[string]schema.JSON{
 		"url":              schema.String(),
 		"status_code":      schema.Int(),
@@ -118,60 +79,6 @@ func OutputSchema() schema.JSON {
 		"host":             schema.String(),   // Extracted host/IP from URL (for cross-tool linking)
 		"port":             schema.Int(),      // Extracted port from URL (for cross-tool linking)
 		"scheme":           schema.String(),   // http or https (for protocol detection)
-	}).WithTaxonomy(schema.TaxonomyMapping{
-		NodeType: "endpoint",
-		IdentifyingProperties: map[string]string{
-			"url": "url",
-		},
-		Properties: []schema.PropertyMapping{
-			schema.PropMap("url", "url"),
-			schema.PropMap("status_code", "status_code"),
-			schema.PropMap("title", "page_title"),
-			schema.PropMap("content_type", "content_type"),
-			schema.PropMap("server", "server"),
-			schema.PropMap("x_powered_by", "x_powered_by"),
-			schema.PropMap("final_url", "final_url"),
-			schema.PropMap("cert_issuer", "tls_cert_issuer"),
-			schema.PropMap("cert_subject", "tls_cert_subject"),
-			schema.PropMap("cert_expiry", "tls_cert_expiry"),
-			schema.PropMap("cert_sans", "tls_cert_sans"),
-			schema.PropMap("host", "host"),
-			schema.PropMap("port", "port"),
-			schema.PropMap("scheme", "scheme"),
-		},
-		Relationships: []schema.RelationshipMapping{
-			// Link agent run to discovered endpoint
-			schema.Rel("DISCOVERED",
-				schema.Node("agent_run", map[string]string{
-					"agent_run_id": "_context.agent_run_id",
-				}),
-				schema.SelfNode(),
-			),
-			// Link endpoint to certificate (when certificate data is present)
-			schema.Rel("SERVES_CERTIFICATE",
-				schema.SelfNode(),
-				schema.Node("certificate", map[string]string{
-					"subject": "certificate.subject",
-				}),
-			),
-			// Cross-tool relationship: Link endpoint to underlying port from nmap/masscan
-			// This enables attack chain traversal: subdomain → host → port → endpoint
-			schema.Rel("HAS_ENDPOINT",
-				schema.Node("port", map[string]string{
-					"host":     "host",
-					"port":     "port",
-					"protocol": "tcp",
-				}),
-				schema.SelfNode(),
-			),
-			// Direct link to host for easier traversal
-			schema.Rel("HOSTED_ON",
-				schema.SelfNode(),
-				schema.Node("host", map[string]string{
-					"host": "host",
-				}),
-			),
-		},
 	})
 
 	return schema.Object(map[string]schema.JSON{

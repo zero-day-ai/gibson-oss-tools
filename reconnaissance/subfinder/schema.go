@@ -29,86 +29,20 @@ func InputSchema() schema.JSON {
 }
 
 // OutputSchema returns the JSON schema for subfinder tool output.
-// Includes embedded taxonomy mappings for GraphRAG integration.
 // Note: subdomains is now an array of objects with name, ips, and sources.
 func OutputSchema() schema.JSON {
-	// IP address schema with taxonomy for host node creation
-	ipSchema := schema.String().WithTaxonomy(schema.TaxonomyMapping{
-		NodeType: "host",
-		IdentifyingProperties: map[string]string{
-			"ip": ".",
-		},
-		Properties: []schema.PropertyMapping{
-			schema.PropMap(".", "ip_address"),
-		},
-		Relationships: []schema.RelationshipMapping{
-			schema.Rel("DISCOVERED",
-				schema.Node("agent_run", map[string]string{
-					"agent_run_id": "_context.agent_run_id",
-				}),
-				schema.SelfNode(),
-			),
-		},
-	})
+	// IP address schema
+	ipSchema := schema.String()
 
 	// Subdomain schema - each object contains name, ips, and sources
 	subdomainSchema := schema.Object(map[string]schema.JSON{
 		"name":    schema.String(),
 		"ips":     schema.Array(ipSchema),
 		"sources": schema.Array(schema.String()),
-	}).WithTaxonomy(schema.TaxonomyMapping{
-		NodeType: "subdomain",
-		IdentifyingProperties: map[string]string{
-			"name": "name",
-		},
-		Properties: []schema.PropertyMapping{
-			schema.PropMap("name", "name"),
-			schema.PropMap("ips", "ip_addresses"),
-			schema.PropMap("sources", "sources"),
-		},
-		Relationships: []schema.RelationshipMapping{
-			// Link subdomain to parent domain (from root output)
-			schema.Rel("HAS_SUBDOMAIN",
-				schema.Node("domain", map[string]string{
-					"name": "_root.domain",
-				}),
-				schema.SelfNode(),
-			),
-			// Link agent run to discovered subdomain
-			schema.Rel("DISCOVERED",
-				schema.Node("agent_run", map[string]string{
-					"agent_run_id": "_context.agent_run_id",
-				}),
-				schema.SelfNode(),
-			),
-			// Link subdomain to resolved IPs
-			schema.Rel("RESOLVES_TO",
-				schema.SelfNode(),
-				schema.Node("host", map[string]string{
-					"ip": "ips[*]",
-				}),
-			),
-		},
 	})
 
-	// Domain field with taxonomy for domain node creation
-	domainSchema := schema.String().WithTaxonomy(schema.TaxonomyMapping{
-		NodeType: "domain",
-		IdentifyingProperties: map[string]string{
-			"name": ".",
-		},
-		Properties: []schema.PropertyMapping{
-			schema.PropMap(".", "name"),
-		},
-		Relationships: []schema.RelationshipMapping{
-			schema.Rel("DISCOVERED",
-				schema.Node("agent_run", map[string]string{
-					"agent_run_id": "_context.agent_run_id",
-				}),
-				schema.SelfNode(),
-			),
-		},
-	})
+	// Domain field
+	domainSchema := schema.String()
 
 	return schema.Object(map[string]schema.JSON{
 		"domain":       domainSchema,

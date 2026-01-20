@@ -32,109 +32,24 @@ func InputSchema() schema.JSON {
 }
 
 // OutputSchema returns the JSON schema for amass tool output.
-// Includes embedded taxonomy mappings for GraphRAG integration.
 func OutputSchema() schema.JSON {
-	// Domain field with taxonomy for domain node creation
-	domainSchema := schema.String().WithTaxonomy(schema.TaxonomyMapping{
-		NodeType: "domain",
-		IdentifyingProperties: map[string]string{
-			"name": "$.",
-		},
-		Properties: []schema.PropertyMapping{
-			schema.PropMap(".", "name"),
-		},
-		Relationships: []schema.RelationshipMapping{
-			schema.Rel("DISCOVERED",
-				schema.Node("agent_run", map[string]string{
-					"agent_run_id": "$._context.agent_run_id",
-				}),
-				schema.SelfNode(),
-			),
-		},
-	})
+	// Domain field
+	domainSchema := schema.String()
 
 	// Subdomain schema - each string is a subdomain FQDN
-	subdomainSchema := schema.String().WithTaxonomy(schema.TaxonomyMapping{
-		NodeType: "subdomain",
-		IdentifyingProperties: map[string]string{
-			"name": "$.",
-		},
-		Properties: []schema.PropertyMapping{
-			schema.PropMap(".", "name"),
-		},
-		Relationships: []schema.RelationshipMapping{
-			schema.Rel("HAS_SUBDOMAIN",
-				schema.Node("domain", map[string]string{
-					"name": "$._root.domain",
-				}),
-				schema.SelfNode(),
-			),
-			schema.Rel("DISCOVERED",
-				schema.Node("agent_run", map[string]string{
-					"agent_run_id": "$._context.agent_run_id",
-				}),
-				schema.SelfNode(),
-			),
-		},
-	})
+	subdomainSchema := schema.String()
 
 	// IP address schema - each string is a host IP
-	ipSchema := schema.String().WithTaxonomy(schema.TaxonomyMapping{
-		NodeType: "host",
-		IdentifyingProperties: map[string]string{
-			"ip": "$.",
-		},
-		Properties: []schema.PropertyMapping{
-			schema.PropMap(".", "ip"),
-		},
-		Relationships: []schema.RelationshipMapping{
-			schema.Rel("DISCOVERED",
-				schema.Node("agent_run", map[string]string{
-					"agent_run_id": "$._context.agent_run_id",
-				}),
-				schema.SelfNode(),
-			),
-		},
-	})
+	ipSchema := schema.String()
 
 	// ASN info schema with associated IPs
-	asnIPSchema := schema.String().WithTaxonomy(schema.TaxonomyMapping{
-		// Create HOSTED_BY relationships from each IP to the parent ASN
-		Relationships: []schema.RelationshipMapping{
-			schema.Rel("HOSTED_BY",
-				schema.Node("host", map[string]string{
-					"ip": "$.",
-				}),
-				schema.Node("asn", map[string]string{
-					"number": "$._parent.number",
-				}),
-			),
-		},
-	})
+	asnIPSchema := schema.String()
 
 	asnSchema := schema.Object(map[string]schema.JSON{
 		"number":      schema.Int(),
 		"description": schema.String(),
 		"country":     schema.String(),
 		"ips":         schema.Array(asnIPSchema),
-	}).WithTaxonomy(schema.TaxonomyMapping{
-		NodeType: "asn",
-		IdentifyingProperties: map[string]string{
-			"number": "$.number",
-		},
-		Properties: []schema.PropertyMapping{
-			schema.PropMap("number", "number"),
-			schema.PropMap("description", "description"),
-			schema.PropMap("country", "country"),
-		},
-		Relationships: []schema.RelationshipMapping{
-			schema.Rel("DISCOVERED",
-				schema.Node("agent_run", map[string]string{
-					"agent_run_id": "$._context.agent_run_id",
-				}),
-				schema.SelfNode(),
-			),
-		},
 	})
 
 	// DNS record schema
@@ -144,29 +59,6 @@ func OutputSchema() schema.JSON {
 		"value":    schema.String(),
 		"priority": schema.Int(),
 		"ttl":      schema.Int(),
-	}).WithTaxonomy(schema.TaxonomyMapping{
-		NodeType: "dns_record",
-		IdentifyingProperties: map[string]string{
-			"name":  "$.name",
-			"type":  "$.type",
-			"value": "$.value",
-		},
-		Properties: []schema.PropertyMapping{
-			schema.PropMap("name", "name"),
-			schema.PropMap("type", "record_type"),
-			schema.PropMap("value", "value"),
-			schema.PropMap("priority", "priority"),
-			schema.PropMap("ttl", "ttl"),
-		},
-		Relationships: []schema.RelationshipMapping{
-			// Link subdomain to DNS record
-			schema.Rel("HAS_DNS_RECORD",
-				schema.Node("subdomain", map[string]string{
-					"name": "$.name",
-				}),
-				schema.SelfNode(),
-			),
-		},
 	})
 
 	return schema.Object(map[string]schema.JSON{

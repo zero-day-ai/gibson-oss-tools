@@ -34,9 +34,8 @@ func InputSchema() schema.JSON {
 }
 
 // OutputSchema returns the JSON schema for nuclei tool output.
-// Includes embedded taxonomy mappings for GraphRAG integration.
 func OutputSchema() schema.JSON {
-	// Finding schema with taxonomy for vulnerability/finding nodes
+	// Finding schema for vulnerability/finding nodes
 	findingSchema := schema.Object(map[string]schema.JSON{
 		"template_id":   schema.String(),
 		"template_name": schema.String(),
@@ -55,59 +54,6 @@ func OutputSchema() schema.JSON {
 		"host":          schema.String(), // Extracted host/IP from matched_at URL
 		"port":          schema.Int(),    // Extracted port from matched_at URL
 		"scheme":        schema.String(), // http or https
-	}).WithTaxonomy(schema.TaxonomyMapping{
-		NodeType: "finding",
-		IdentifyingProperties: map[string]string{
-			"template_id": "$.template_id",
-			"matched_at":  "$.matched_at",
-		},
-		Properties: []schema.PropertyMapping{
-			schema.PropMap("template_id", "template_id"),
-			schema.PropMap("template_name", "title"),
-			schema.PropMapWithTransform("severity", "severity", "lowercase"),
-			schema.PropMap("type", "category"),
-			schema.PropMap("matched_at", "affected_component"),
-			schema.PropMap("matcher_name", "matcher_name"),
-			schema.PropMap("description", "description"),
-			schema.PropMap("remediation", "remediation"),
-			schema.PropMap("references", "references"),
-			schema.PropMap("cve_id", "cve_id"),
-			schema.PropMap("cwe_id", "cwe_id"),
-			schema.PropMap("cvss_score", "cvss_score"),
-			schema.PropMap("cvss_metrics", "cvss_metrics"),
-			schema.PropMap("host", "host"),
-			schema.PropMap("port", "port"),
-			schema.PropMap("scheme", "scheme"),
-		},
-		Relationships: []schema.RelationshipMapping{
-			// Link finding to affected endpoint (if httpx discovered it)
-			schema.Rel("AFFECTS",
-				schema.SelfNode(),
-				schema.Node("endpoint", map[string]string{
-					"url": "$.matched_at",
-				})),
-			// Cross-tool relationship: Link finding to underlying port from nmap/masscan
-			// This enables attack chain traversal: finding → port → host
-			schema.Rel("AFFECTS",
-				schema.SelfNode(),
-				schema.Node("port", map[string]string{
-					"host":     "$.host",
-					"port":     "$.port",
-					"protocol": "tcp",
-				})),
-			// Direct link to host for easier traversal
-			schema.Rel("AFFECTS",
-				schema.SelfNode(),
-				schema.Node("host", map[string]string{
-					"ip": "$.host",
-				})),
-			// Link agent run to discovered finding
-			schema.Rel("DISCOVERED",
-				schema.Node("agent_run", map[string]string{
-					"agent_run_id": "$._context.agent_run_id",
-				}),
-				schema.SelfNode()),
-		},
 	})
 
 	return schema.Object(map[string]schema.JSON{

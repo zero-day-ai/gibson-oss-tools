@@ -4,6 +4,8 @@ go 1.24.4
 
 require github.com/zero-day-ai/sdk v0.23.0
 
+replace github.com/zero-day-ai/sdk => ../../../sdk
+
 require (
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/coreos/go-semver v0.3.1 // indirect
