@@ -2,7 +2,7 @@ module github.com/zero-day-ai/gibson-tools-official/discovery/nmap
 
 go 1.24.4
 
-require github.com/zero-day-ai/sdk v0.23.0
+require github.com/zero-day-ai/sdk v0.25.0
 
 replace github.com/zero-day-ai/sdk => ../../../sdk
 
