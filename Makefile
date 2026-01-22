@@ -18,15 +18,12 @@ VERBOSE_FLAG=
 # Tool directories - only tools with embedded GraphRAG taxonomy
 # Reconnaissance Tools (TA0043)
 RECON_TOOLS := \
-	reconnaissance/subfinder \
 	reconnaissance/httpx \
-	reconnaissance/amass \
 	reconnaissance/nuclei
 
 # Discovery Tools (TA0007)
 DISCOVERY_TOOLS := \
-	discovery/nmap \
-	discovery/masscan
+	discovery/nmap
 
 # Fingerprinting Tools (TA0015)
 FINGERPRINTING_TOOLS := \
@@ -74,8 +71,8 @@ help:
 	@echo "  lint             - Run golangci-lint (if available)"
 	@echo ""
 	@echo "Phase-specific build targets:"
-	@echo "  build-recon        - Build reconnaissance tools (subfinder, httpx, amass, nuclei)"
-	@echo "  build-discovery    - Build discovery tools (nmap, masscan)"
+	@echo "  build-recon        - Build reconnaissance tools (httpx, nuclei)"
+	@echo "  build-discovery    - Build discovery tools (nmap)"
 	@echo "  build-fingerprinting - Build fingerprinting tools (wappalyzer, whatweb, testssl, sslyze)"
 	@echo ""
 	@echo "Examples:"
