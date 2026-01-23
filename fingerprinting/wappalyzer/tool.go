@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/zero-day-ai/sdk/api/gen/graphragpb"
 	"github.com/zero-day-ai/sdk/api/gen/toolspb"
 	"github.com/zero-day-ai/sdk/exec"
 	"github.com/zero-day-ai/sdk/health"
@@ -173,9 +174,55 @@ func parseOutputProto(data []byte, duration time.Duration) (*toolspb.WappalyzerR
 		results = append(results, result)
 	}
 
-	return &toolspb.WappalyzerResponse{
+	response := &toolspb.WappalyzerResponse{
 		Results:      results,
 		TotalTargets: int32(len(results)),
 		Duration:     duration.Seconds(),
-	}, nil
+	}
+
+	// Populate discovery field for automatic graph storage
+	response.Discovery = convertToDiscoveryResult(response)
+
+	return response, nil
+}
+
+// convertToDiscoveryResult converts wappalyzer results to GraphRAG discovery result proto
+func convertToDiscoveryResult(response *toolspb.WappalyzerResponse) *graphragpb.DiscoveryResult {
+	result := &graphragpb.DiscoveryResult{
+		Technologies: []*graphragpb.Technology{},
+	}
+
+	// Track unique technologies to avoid duplicates
+	techMap := make(map[string]*graphragpb.Technology)
+
+	for _, r := range response.Results {
+		for _, tech := range r.Technologies {
+			// Use name+version as key to avoid duplicates
+			key := tech.Name
+			if tech.Version != "" {
+				key = fmt.Sprintf("%s:%s", tech.Name, tech.Version)
+			}
+
+			if _, exists := techMap[key]; !exists {
+				// Get category name (use first category if multiple)
+				category := ""
+				if len(tech.Categories) > 0 {
+					category = tech.Categories[0].Name
+				}
+
+				techMap[key] = &graphragpb.Technology{
+					Name:     tech.Name,
+					Version:  tech.Version,
+					Category: category,
+				}
+			}
+		}
+	}
+
+	// Add unique technologies
+	for _, tech := range techMap {
+		result.Technologies = append(result.Technologies, tech)
+	}
+
+	return result
 }

@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/zero-day-ai/sdk/api/gen/graphragpb"
 	"github.com/zero-day-ai/sdk/api/gen/toolspb"
 	"github.com/zero-day-ai/sdk/exec"
 	"github.com/zero-day-ai/sdk/health"
@@ -136,11 +137,16 @@ func (t *ToolImpl) ExecuteProto(ctx context.Context, input proto.Message) (proto
 		results = append(results, targetResult)
 	}
 
-	return &toolspb.TestsslResponse{
+	response := &toolspb.TestsslResponse{
 		Results:      results,
 		TotalTargets: int32(len(results)),
 		Duration:     time.Since(startTime).Seconds(),
-	}, nil
+	}
+
+	// Populate discovery field for automatic graph storage
+	response.Discovery = convertToDiscoveryResult(response)
+
+	return response, nil
 }
 
 // Health checks if the testssl.sh binary is available
@@ -368,4 +374,65 @@ func parseCertificate(entry TestSSLEntry) map[string]any {
 	}
 
 	return cert
+}
+
+// convertToDiscoveryResult converts testssl results to GraphRAG discovery result proto
+func convertToDiscoveryResult(response *toolspb.TestsslResponse) *graphragpb.DiscoveryResult {
+	result := &graphragpb.DiscoveryResult{
+		Certificates:    []*graphragpb.Certificate{},
+		Vulnerabilities: []*graphragpb.Vulnerability{},
+	}
+
+	// Track unique certificates by subject
+	certMap := make(map[string]*graphragpb.Certificate)
+	// Track unique vulnerabilities
+	vulnMap := make(map[string]*graphragpb.Vulnerability)
+
+	for _, r := range response.Results {
+		// Extract certificate if present
+		if r.Certificate != nil && r.Certificate.SubjectDn != "" {
+			if _, exists := certMap[r.Certificate.SubjectDn]; !exists {
+				certMap[r.Certificate.SubjectDn] = &graphragpb.Certificate{
+					Subject:   r.Certificate.SubjectDn,
+					Issuer:    r.Certificate.IssuerDn,
+					NotBefore: r.Certificate.NotBefore,
+					NotAfter:  r.Certificate.NotAfter,
+				}
+			}
+		}
+
+		// Extract vulnerabilities
+		for _, vuln := range r.Vulnerabilities {
+			if !vuln.Vulnerable {
+				continue // Skip non-vulnerable findings
+			}
+
+			vulnID := vuln.Id
+			if _, exists := vulnMap[vulnID]; !exists {
+				v := &graphragpb.Vulnerability{
+					Id:          vulnID,
+					Title:       vuln.Name,
+					Description: vuln.Finding,
+					Severity:    strings.ToLower(vuln.Severity),
+				}
+				// Add first CVE if present
+				if len(vuln.Cve) > 0 {
+					v.Id = vuln.Cve[0]
+				}
+				vulnMap[vulnID] = v
+			}
+		}
+	}
+
+	// Add unique certificates
+	for _, cert := range certMap {
+		result.Certificates = append(result.Certificates, cert)
+	}
+
+	// Add unique vulnerabilities
+	for _, vuln := range vulnMap {
+		result.Vulnerabilities = append(result.Vulnerabilities, vuln)
+	}
+
+	return result
 }

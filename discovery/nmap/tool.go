@@ -7,7 +7,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/zero-day-ai/sdk/api/gen/graphragpb"
 	"github.com/zero-day-ai/sdk/api/gen/toolspb"
+	"github.com/zero-day-ai/sdk/enum"
 	"github.com/zero-day-ai/sdk/exec"
 	"github.com/zero-day-ai/sdk/graphrag/domain"
 	"github.com/zero-day-ai/sdk/health"
@@ -25,6 +27,28 @@ const (
 	BinaryName      = "nmap"
 )
 
+func init() {
+	// Register scanType enum mappings
+	enum.Register("nmap", "scanType", map[string]string{
+		"ping":    "SCAN_TYPE_PING",
+		"syn":     "SCAN_TYPE_SYN",
+		"connect": "SCAN_TYPE_CONNECT",
+		"udp":     "SCAN_TYPE_UDP",
+		"ack":     "SCAN_TYPE_ACK",
+		"window":  "SCAN_TYPE_WINDOW",
+		"maimon":  "SCAN_TYPE_MAIMON",
+	})
+
+	// Register timing enum mappings
+	enum.Register("nmap", "timing", map[string]string{
+		"paranoid":   "TIMING_TEMPLATE_PARANOID",
+		"sneaky":     "TIMING_TEMPLATE_SNEAKY",
+		"polite":     "TIMING_TEMPLATE_POLITE",
+		"normal":     "TIMING_TEMPLATE_NORMAL",
+		"aggressive": "TIMING_TEMPLATE_AGGRESSIVE",
+		"insane":     "TIMING_TEMPLATE_INSANE",
+	})
+}
 
 // ToolImpl implements the nmap tool
 type ToolImpl struct{}
@@ -475,6 +499,9 @@ func convertToProtoResponse(discoveryResult *domain.DiscoveryResult, scanDuratio
 		response.Hosts = append(response.Hosts, protoHost)
 	}
 
+	// Populate discovery field for automatic graph storage
+	response.Discovery = convertToDiscoveryResult(discoveryResult)
+
 	return response
 }
 
@@ -515,4 +542,45 @@ func classifyExecutionError(err error) toolerr.ErrorClass {
 
 	// Default to transient for unknown execution errors
 	return toolerr.ErrorClassTransient
+}
+
+// convertToDiscoveryResult converts domain types to GraphRAG discovery result proto
+func convertToDiscoveryResult(discoveryResult *domain.DiscoveryResult) *graphragpb.DiscoveryResult {
+	result := &graphragpb.DiscoveryResult{
+		Hosts:    []*graphragpb.Host{},
+		Ports:    []*graphragpb.Port{},
+		Services: []*graphragpb.Service{},
+	}
+
+	// Convert hosts
+	for _, h := range discoveryResult.Hosts {
+		result.Hosts = append(result.Hosts, &graphragpb.Host{
+			Ip:       h.IP,
+			Hostname: h.Hostname,
+			State:    h.State,
+			Os:       h.OS,
+		})
+	}
+
+	// Convert ports with parent reference to host
+	for _, p := range discoveryResult.Ports {
+		result.Ports = append(result.Ports, &graphragpb.Port{
+			HostId:   p.HostID, // Parent reference
+			Number:   int32(p.Number),
+			Protocol: p.Protocol,
+			State:    p.State,
+		})
+	}
+
+	// Convert services with parent reference to port
+	for _, s := range discoveryResult.Services {
+		result.Services = append(result.Services, &graphragpb.Service{
+			PortId:  s.PortID, // Parent reference (format: "host_id:port:protocol")
+			Name:    s.Name,
+			Version: s.Version,
+			Banner:  s.Banner,
+		})
+	}
+
+	return result
 }

@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/zero-day-ai/sdk/api/gen/graphragpb"
 	"github.com/zero-day-ai/sdk/api/gen/toolspb"
 	"github.com/zero-day-ai/sdk/exec"
 	"github.com/zero-day-ai/sdk/health"
@@ -131,6 +132,9 @@ func (t *ToolImpl) ExecuteProto(ctx context.Context, req *toolspb.HttpxRequest) 
 
 	// Add scan duration
 	response.Duration = time.Since(startTime).Seconds()
+
+	// Populate discovery field for automatic graph storage
+	response.Discovery = convertToDiscoveryResult(response)
 
 	return response, nil
 }
@@ -427,4 +431,92 @@ func parseOutput(data []byte) (map[string]any, error) {
 		"total_probed": len(results),
 		"alive_count":  aliveCount,
 	}, nil
+}
+
+// convertToDiscoveryResult converts httpx results to GraphRAG discovery result proto
+func convertToDiscoveryResult(response *toolspb.HttpxResponse) *graphragpb.DiscoveryResult {
+	result := &graphragpb.DiscoveryResult{
+		Endpoints:     []*graphragpb.Endpoint{},
+		Technologies:  []*graphragpb.Technology{},
+		Certificates:  []*graphragpb.Certificate{},
+	}
+
+	// Track unique technologies to avoid duplicates
+	techMap := make(map[string]*graphragpb.Technology)
+
+	// Track unique certificates by subject
+	certMap := make(map[string]*graphragpb.Certificate)
+
+	for _, r := range response.Results {
+		// Parse URL to extract path
+		parsedURL, err := url.Parse(r.Url)
+		if err != nil {
+			continue
+		}
+
+		// Create service ID (format: "host_id:port:service_name")
+		serviceID := fmt.Sprintf("%s:%d:http", r.Host, r.Port)
+		if r.Scheme == "https" {
+			serviceID = fmt.Sprintf("%s:%d:https", r.Host, r.Port)
+		}
+
+		// Create endpoint
+		path := parsedURL.Path
+		if path == "" {
+			path = "/"
+		}
+
+		endpoint := &graphragpb.Endpoint{
+			ServiceId:   serviceID,
+			Path:        path,
+			Method:      "GET", // httpx default
+			StatusCode:  r.StatusCode,
+			ContentType: r.ContentType,
+		}
+
+		result.Endpoints = append(result.Endpoints, endpoint)
+
+		// Extract technologies
+		for _, tech := range r.Technologies {
+			// Use name+version as key to avoid duplicates
+			key := tech.Name
+			if tech.Version != "" {
+				key = fmt.Sprintf("%s:%s", tech.Name, tech.Version)
+			}
+
+			if _, exists := techMap[key]; !exists {
+				techMap[key] = &graphragpb.Technology{
+					Name:     tech.Name,
+					Version:  tech.Version,
+					Category: tech.Category,
+				}
+			}
+		}
+
+		// Extract certificate if present
+		if r.Tls != nil && r.Tls.SubjectDn != "" {
+			// Use subject as unique key
+			if _, exists := certMap[r.Tls.SubjectDn]; !exists {
+				certMap[r.Tls.SubjectDn] = &graphragpb.Certificate{
+					Subject:                  r.Tls.SubjectDn,
+					Issuer:                   r.Tls.IssuerDn,
+					NotBefore:                r.Tls.NotBefore,
+					NotAfter:                 r.Tls.NotAfter,
+					SubjectAlternativeNames:  r.Tls.Sans,
+				}
+			}
+		}
+	}
+
+	// Add unique technologies
+	for _, tech := range techMap {
+		result.Technologies = append(result.Technologies, tech)
+	}
+
+	// Add unique certificates
+	for _, cert := range certMap {
+		result.Certificates = append(result.Certificates, cert)
+	}
+
+	return result
 }

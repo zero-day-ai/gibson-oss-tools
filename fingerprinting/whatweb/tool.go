@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/zero-day-ai/sdk/api/gen/graphragpb"
 	"github.com/zero-day-ai/sdk/api/gen/toolspb"
 	"github.com/zero-day-ai/sdk/exec"
 	"github.com/zero-day-ai/sdk/health"
@@ -204,8 +205,60 @@ func parseOutputProto(data []byte) (*toolspb.WhatwebResponse, error) {
 		results = append(results, result)
 	}
 
-	return &toolspb.WhatwebResponse{
+	response := &toolspb.WhatwebResponse{
 		Results:      results,
 		TotalTargets: int32(len(results)),
-	}, nil
+	}
+
+	// Populate discovery field for automatic graph storage
+	response.Discovery = convertToDiscoveryResult(response)
+
+	return response, nil
+}
+
+// convertToDiscoveryResult converts whatweb results to GraphRAG discovery result proto
+func convertToDiscoveryResult(response *toolspb.WhatwebResponse) *graphragpb.DiscoveryResult {
+	result := &graphragpb.DiscoveryResult{
+		Technologies: []*graphragpb.Technology{},
+	}
+
+	// Track unique technologies to avoid duplicates
+	techMap := make(map[string]*graphragpb.Technology)
+
+	for _, r := range response.Results {
+		for _, plugin := range r.Plugins {
+			// Extract version (use first if multiple)
+			version := ""
+			if len(plugin.Version) > 0 {
+				version = plugin.Version[0]
+			}
+
+			// Use name+version as key to avoid duplicates
+			key := plugin.Name
+			if version != "" {
+				key = fmt.Sprintf("%s:%s", plugin.Name, version)
+			}
+
+			if _, exists := techMap[key]; !exists {
+				// Get category (use first if multiple)
+				category := ""
+				if len(plugin.Categories) > 0 {
+					category = plugin.Categories[0]
+				}
+
+				techMap[key] = &graphragpb.Technology{
+					Name:     plugin.Name,
+					Version:  version,
+					Category: category,
+				}
+			}
+		}
+	}
+
+	// Add unique technologies
+	for _, tech := range techMap {
+		result.Technologies = append(result.Technologies, tech)
+	}
+
+	return result
 }

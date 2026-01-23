@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/zero-day-ai/sdk/api/gen/graphragpb"
 	"github.com/zero-day-ai/sdk/api/gen/toolspb"
 	"github.com/zero-day-ai/sdk/exec"
 	"github.com/zero-day-ai/sdk/health"
@@ -122,6 +123,9 @@ func (t *ToolImpl) ExecuteProto(ctx context.Context, input proto.Message) (proto
 
 	// Add scan duration
 	response.Duration = time.Since(startTime).Seconds()
+
+	// Populate discovery field for automatic graph storage
+	response.Discovery = convertToDiscoveryResult(response)
 
 	return response, nil
 }
@@ -250,4 +254,62 @@ func parseOutputProto(data []byte, target string) (*toolspb.NucleiResponse, erro
 		Results:      results,
 		TotalMatches: int32(len(results)),
 	}, nil
+}
+
+// convertToDiscoveryResult converts nuclei results to GraphRAG discovery result proto
+func convertToDiscoveryResult(response *toolspb.NucleiResponse) *graphragpb.DiscoveryResult {
+	result := &graphragpb.DiscoveryResult{
+		Vulnerabilities: []*graphragpb.Vulnerability{},
+	}
+
+	// Track unique vulnerabilities (by CVE or template ID)
+	vulnMap := make(map[string]*graphragpb.Vulnerability)
+
+	for _, match := range response.Results {
+		// Build vulnerability ID
+		vulnID := match.TemplateId
+
+		// If we have CVE IDs, use the first one as the ID
+		if match.Info != nil && match.Info.Classification != nil && len(match.Info.Classification.CveId) > 0 {
+			vulnID = match.Info.Classification.CveId[0]
+		}
+
+		// Skip if we've already added this vulnerability
+		if _, exists := vulnMap[vulnID]; exists {
+			continue
+		}
+
+		// Create vulnerability
+		vuln := &graphragpb.Vulnerability{
+			Id:          vulnID,
+			Title:       match.TemplateName,
+			Description: "",
+			Severity:    strings.ToLower(match.Info.Severity),
+			References:  []string{},
+		}
+
+		if match.Info != nil {
+			vuln.Description = match.Info.Description
+			vuln.References = match.Info.Reference
+
+			// Add classification data
+			if match.Info.Classification != nil {
+				// Use first CWE if multiple
+				if len(match.Info.Classification.CweId) > 0 {
+					vuln.Cwe = match.Info.Classification.CweId[0]
+				}
+				vuln.Cvss = match.Info.Classification.CvssScore
+				vuln.CvssVector = match.Info.Classification.CvssMetrics
+			}
+		}
+
+		vulnMap[vulnID] = vuln
+	}
+
+	// Add unique vulnerabilities
+	for _, vuln := range vulnMap {
+		result.Vulnerabilities = append(result.Vulnerabilities, vuln)
+	}
+
+	return result
 }

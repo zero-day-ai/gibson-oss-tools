@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/zero-day-ai/sdk/api/gen/graphragpb"
 	"github.com/zero-day-ai/sdk/api/gen/toolspb"
 	"github.com/zero-day-ai/sdk/exec"
 	"github.com/zero-day-ai/sdk/health"
@@ -117,6 +118,9 @@ func (t *ToolImpl) ExecuteProto(ctx context.Context, input proto.Message) (proto
 
 	// Add scan duration
 	response.Duration = time.Since(startTime).Seconds()
+
+	// Populate discovery field for automatic graph storage
+	response.Discovery = convertToDiscoveryResult(response)
 
 	return response, nil
 }
@@ -330,4 +334,73 @@ func parseCertificateInfoProto(cert map[string]any) *toolspb.SslyzeCertificateIn
 	}
 
 	return certificate
+}
+
+// convertToDiscoveryResult converts sslyze results to GraphRAG discovery result proto
+func convertToDiscoveryResult(response *toolspb.SslyzeResponse) *graphragpb.DiscoveryResult {
+	result := &graphragpb.DiscoveryResult{
+		Certificates:    []*graphragpb.Certificate{},
+		Vulnerabilities: []*graphragpb.Vulnerability{},
+	}
+
+	// Track unique certificates by subject
+	certMap := make(map[string]*graphragpb.Certificate)
+	// Track unique vulnerabilities
+	vulnMap := make(map[string]*graphragpb.Vulnerability)
+
+	for _, r := range response.Results {
+		// Extract certificate if present
+		if r.Certificate != nil && r.Certificate.SubjectDn != "" {
+			if _, exists := certMap[r.Certificate.SubjectDn]; !exists {
+				certMap[r.Certificate.SubjectDn] = &graphragpb.Certificate{
+					SerialNumber:            r.Certificate.SerialNumber,
+					Subject:                 r.Certificate.SubjectDn,
+					Issuer:                  r.Certificate.IssuerDn,
+					NotBefore:               r.Certificate.NotBefore,
+					NotAfter:                r.Certificate.NotAfter,
+					SubjectAlternativeNames: r.Certificate.Sans,
+					SignatureAlgorithm:      r.Certificate.SignatureAlgorithm,
+					KeySize:                 r.Certificate.PublicKeySize,
+					Fingerprint:             r.Certificate.FingerprintSha256,
+				}
+			}
+		}
+
+		// Extract vulnerabilities from security checks
+		if r.Heartbleed != nil && r.Heartbleed.Vulnerable {
+			vulnID := "CVE-2014-0160"
+			if _, exists := vulnMap[vulnID]; !exists {
+				vulnMap[vulnID] = &graphragpb.Vulnerability{
+					Id:          "CVE-2014-0160",
+					Title:       "Heartbleed",
+					Description: r.Heartbleed.Details,
+					Severity:    "high",
+				}
+			}
+		}
+
+		if r.Robot != nil && r.Robot.Vulnerable {
+			vulnID := "CVE-2017-13099"
+			if _, exists := vulnMap[vulnID]; !exists {
+				vulnMap[vulnID] = &graphragpb.Vulnerability{
+					Id:          "CVE-2017-13099",
+					Title:       "ROBOT Attack",
+					Description: r.Robot.Details,
+					Severity:    "medium",
+				}
+			}
+		}
+	}
+
+	// Add unique certificates
+	for _, cert := range certMap {
+		result.Certificates = append(result.Certificates, cert)
+	}
+
+	// Add unique vulnerabilities
+	for _, vuln := range vulnMap {
+		result.Vulnerabilities = append(result.Vulnerabilities, vuln)
+	}
+
+	return result
 }
