@@ -246,11 +246,16 @@ func convertToDiscoveryResult(response *toolspb.WhatwebResponse) *graphragpb.Dis
 					category = plugin.Categories[0]
 				}
 
-				techMap[key] = &graphragpb.Technology{
-					Name:     plugin.Name,
-					Version:  version,
-					Category: category,
+				techProto := &graphragpb.Technology{
+					Name: plugin.Name,
 				}
+				if version != "" {
+					techProto.Version = &version
+				}
+				if category != "" {
+					techProto.Category = &category
+				}
+				techMap[key] = techProto
 			}
 		}
 	}

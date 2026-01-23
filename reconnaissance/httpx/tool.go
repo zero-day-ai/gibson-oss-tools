@@ -433,12 +433,17 @@ func parseOutput(data []byte) (map[string]any, error) {
 	}, nil
 }
 
+// ptrStr returns a pointer to the given string
+func ptrStr(s string) *string {
+	return &s
+}
+
 // convertToDiscoveryResult converts httpx results to GraphRAG discovery result proto
 func convertToDiscoveryResult(response *toolspb.HttpxResponse) *graphragpb.DiscoveryResult {
 	result := &graphragpb.DiscoveryResult{
-		Endpoints:     []*graphragpb.Endpoint{},
-		Technologies:  []*graphragpb.Technology{},
-		Certificates:  []*graphragpb.Certificate{},
+		Endpoints:    []*graphragpb.Endpoint{},
+		Technologies: []*graphragpb.Technology{},
+		Certificates: []*graphragpb.Certificate{},
 	}
 
 	// Track unique technologies to avoid duplicates
@@ -448,12 +453,6 @@ func convertToDiscoveryResult(response *toolspb.HttpxResponse) *graphragpb.Disco
 	certMap := make(map[string]*graphragpb.Certificate)
 
 	for _, r := range response.Results {
-		// Parse URL to extract path
-		parsedURL, err := url.Parse(r.Url)
-		if err != nil {
-			continue
-		}
-
 		// Create service ID (format: "host_id:port:service_name")
 		serviceID := fmt.Sprintf("%s:%d:http", r.Host, r.Port)
 		if r.Scheme == "https" {
@@ -461,17 +460,12 @@ func convertToDiscoveryResult(response *toolspb.HttpxResponse) *graphragpb.Disco
 		}
 
 		// Create endpoint
-		path := parsedURL.Path
-		if path == "" {
-			path = "/"
-		}
-
 		endpoint := &graphragpb.Endpoint{
 			ServiceId:   serviceID,
-			Path:        path,
-			Method:      "GET", // httpx default
-			StatusCode:  r.StatusCode,
-			ContentType: r.ContentType,
+			Url:         r.Url,
+			Method:      ptrStr("GET"), // httpx default
+			StatusCode:  &r.StatusCode,
+			ContentType: ptrStr(r.ContentType),
 		}
 
 		result.Endpoints = append(result.Endpoints, endpoint)
@@ -485,11 +479,16 @@ func convertToDiscoveryResult(response *toolspb.HttpxResponse) *graphragpb.Disco
 			}
 
 			if _, exists := techMap[key]; !exists {
-				techMap[key] = &graphragpb.Technology{
-					Name:     tech.Name,
-					Version:  tech.Version,
-					Category: tech.Category,
+				techProto := &graphragpb.Technology{
+					Name: tech.Name,
 				}
+				if tech.Version != "" {
+					techProto.Version = &tech.Version
+				}
+				if tech.Category != "" {
+					techProto.Category = &tech.Category
+				}
+				techMap[key] = techProto
 			}
 		}
 
@@ -497,13 +496,15 @@ func convertToDiscoveryResult(response *toolspb.HttpxResponse) *graphragpb.Disco
 		if r.Tls != nil && r.Tls.SubjectDn != "" {
 			// Use subject as unique key
 			if _, exists := certMap[r.Tls.SubjectDn]; !exists {
-				certMap[r.Tls.SubjectDn] = &graphragpb.Certificate{
-					Subject:                  r.Tls.SubjectDn,
-					Issuer:                   r.Tls.IssuerDn,
-					NotBefore:                r.Tls.NotBefore,
-					NotAfter:                 r.Tls.NotAfter,
-					SubjectAlternativeNames:  r.Tls.Sans,
+				cert := &graphragpb.Certificate{
+					Subject: ptrStr(r.Tls.SubjectDn),
+					Issuer:  ptrStr(r.Tls.IssuerDn),
 				}
+				// Combine SANs into single string
+				if len(r.Tls.Sans) > 0 {
+					cert.San = ptrStr(strings.Join(r.Tls.Sans, ", "))
+				}
+				certMap[r.Tls.SubjectDn] = cert
 			}
 		}
 	}

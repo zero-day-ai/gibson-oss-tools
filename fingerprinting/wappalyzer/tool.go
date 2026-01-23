@@ -210,11 +210,16 @@ func convertToDiscoveryResult(response *toolspb.WappalyzerResponse) *graphragpb.
 					category = tech.Categories[0].Name
 				}
 
-				techMap[key] = &graphragpb.Technology{
-					Name:     tech.Name,
-					Version:  tech.Version,
-					Category: category,
+				techProto := &graphragpb.Technology{
+					Name: tech.Name,
 				}
+				if tech.Version != "" {
+					techProto.Version = &tech.Version
+				}
+				if category != "" {
+					techProto.Category = &category
+				}
+				techMap[key] = techProto
 			}
 		}
 	}

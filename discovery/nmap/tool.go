@@ -310,7 +310,7 @@ func parseOutput(data []byte) (*domain.DiscoveryResult, error) {
 		return nil, fmt.Errorf("failed to parse nmap XML: %w", err)
 	}
 
-	result := domain.NewDiscoveryResult()
+	result := domain.NewEmptyDiscoveryResult()
 
 	for _, host := range nmapRun.Hosts {
 		// Get IP address
@@ -339,25 +339,29 @@ func parseOutput(data []byte) (*domain.DiscoveryResult, error) {
 			os = host.OS.OSMatches[0].Name
 		}
 
-		// Create Host node
-		hostNode := &domain.Host{
-			IP:       ip,
-			Hostname: hostname,
-			State:    host.Status.State,
-			OS:       os,
+		// Create Host node using proto type
+		hostNode := &graphragpb.Host{
+			Ip:    ip,
+			State: ptrStr(host.Status.State),
 		}
-		result.Hosts = append(result.Hosts, hostNode)
+		if hostname != "" {
+			hostNode.Hostname = &hostname
+		}
+		if os != "" {
+			hostNode.Os = &os
+		}
+		result.AddHost(hostNode)
 
 		// Process ports
 		for _, port := range host.Ports {
-			// Create Port node
-			portNode := &domain.Port{
-				HostID:   ip,
-				Number:   port.PortID,
+			// Create Port node using proto type
+			portNode := &graphragpb.Port{
+				HostId:   ip,
+				Number:   int32(port.PortID),
 				Protocol: port.Protocol,
-				State:    port.State.State,
+				State:    ptrStr(port.State.State),
 			}
-			result.Ports = append(result.Ports, portNode)
+			result.AddPort(portNode)
 
 			// Create Service node if service information is available
 			if port.Service.Name != "" {
@@ -374,18 +378,24 @@ func parseOutput(data []byte) (*domain.DiscoveryResult, error) {
 					}
 				}
 
-				serviceNode := &domain.Service{
-					PortID:  portID,
-					Name:    port.Service.Name,
-					Version: version,
-					Banner:  "", // nmap doesn't provide banner directly, could be extracted from scripts
+				serviceNode := &graphragpb.Service{
+					PortId: portID,
+					Name:   port.Service.Name,
 				}
-				result.Services = append(result.Services, serviceNode)
+				if version != "" {
+					serviceNode.Version = &version
+				}
+				result.AddService(serviceNode)
 			}
 		}
 	}
 
 	return result, nil
+}
+
+// ptrStr returns a pointer to the given string
+func ptrStr(s string) *string {
+	return &s
 }
 
 // convertScanType converts proto ScanType enum to nmap string
@@ -436,8 +446,12 @@ func convertTimingTemplate(timing toolspb.TimingTemplate) int {
 
 // convertToProtoResponse converts DiscoveryResult to NmapResponse
 func convertToProtoResponse(discoveryResult *domain.DiscoveryResult, scanDuration float64, startTime time.Time) *toolspb.NmapResponse {
+	hosts := discoveryResult.Hosts()
+	ports := discoveryResult.Ports()
+	services := discoveryResult.Services()
+
 	response := &toolspb.NmapResponse{
-		TotalHosts:   int32(len(discoveryResult.Hosts)),
+		TotalHosts:   int32(len(hosts)),
 		ScanDuration: scanDuration,
 		StartTime:    startTime.Unix(),
 		EndTime:      time.Now().Unix(),
@@ -445,8 +459,12 @@ func convertToProtoResponse(discoveryResult *domain.DiscoveryResult, scanDuratio
 
 	// Count hosts that are up
 	hostsUp := int32(0)
-	for _, host := range discoveryResult.Hosts {
-		if host.State == "up" {
+	for _, host := range hosts {
+		state := ""
+		if host.State != nil {
+			state = *host.State
+		}
+		if state == "up" {
 			hostsUp++
 		}
 	}
@@ -454,39 +472,60 @@ func convertToProtoResponse(discoveryResult *domain.DiscoveryResult, scanDuratio
 	response.HostsDown = response.TotalHosts - hostsUp
 
 	// Convert domain hosts to proto hosts
-	for _, domainHost := range discoveryResult.Hosts {
+	for _, domainHost := range hosts {
+		hostname := ""
+		if domainHost.Hostname != nil {
+			hostname = *domainHost.Hostname
+		}
+		state := ""
+		if domainHost.State != nil {
+			state = *domainHost.State
+		}
+		os := ""
+		if domainHost.Os != nil {
+			os = *domainHost.Os
+		}
+
 		protoHost := &toolspb.NmapHost{
-			Ip:       domainHost.IP,
-			Hostname: domainHost.Hostname,
-			State:    domainHost.State,
+			Ip:       domainHost.Ip,
+			Hostname: hostname,
+			State:    state,
 		}
 
 		// Add OS information if available
-		if domainHost.OS != "" {
+		if os != "" {
 			protoHost.OsMatches = []*toolspb.OSMatch{
 				{
-					Name:     domainHost.OS,
+					Name:     os,
 					Accuracy: 100, // Assuming high accuracy for simplicity
 				},
 			}
 		}
 
 		// Find and add ports for this host
-		for _, domainPort := range discoveryResult.Ports {
-			if domainPort.HostID == domainHost.IP {
+		for _, domainPort := range ports {
+			if domainPort.HostId == domainHost.Ip {
+				portState := ""
+				if domainPort.State != nil {
+					portState = *domainPort.State
+				}
 				protoPort := &toolspb.NmapPort{
-					Number:   int32(domainPort.Number),
+					Number:   domainPort.Number,
 					Protocol: domainPort.Protocol,
-					State:    domainPort.State,
+					State:    portState,
 				}
 
 				// Find service for this port
-				portID := fmt.Sprintf("%s:%d:%s", domainHost.IP, domainPort.Number, domainPort.Protocol)
-				for _, domainService := range discoveryResult.Services {
-					if domainService.PortID == portID {
+				portID := fmt.Sprintf("%s:%d:%s", domainHost.Ip, domainPort.Number, domainPort.Protocol)
+				for _, domainService := range services {
+					if domainService.PortId == portID {
+						version := ""
+						if domainService.Version != nil {
+							version = *domainService.Version
+						}
 						protoPort.Service = &toolspb.NmapService{
 							Name:    domainService.Name,
-							Version: domainService.Version,
+							Version: version,
 						}
 						break
 					}
@@ -500,7 +539,7 @@ func convertToProtoResponse(discoveryResult *domain.DiscoveryResult, scanDuratio
 	}
 
 	// Populate discovery field for automatic graph storage
-	response.Discovery = convertToDiscoveryResult(discoveryResult)
+	response.Discovery = discoveryResult.Proto
 
 	return response
 }
@@ -545,42 +584,8 @@ func classifyExecutionError(err error) toolerr.ErrorClass {
 }
 
 // convertToDiscoveryResult converts domain types to GraphRAG discovery result proto
+// Note: This function is no longer needed since DiscoveryResult now wraps the proto directly.
+// The proto can be accessed via discoveryResult.Proto
 func convertToDiscoveryResult(discoveryResult *domain.DiscoveryResult) *graphragpb.DiscoveryResult {
-	result := &graphragpb.DiscoveryResult{
-		Hosts:    []*graphragpb.Host{},
-		Ports:    []*graphragpb.Port{},
-		Services: []*graphragpb.Service{},
-	}
-
-	// Convert hosts
-	for _, h := range discoveryResult.Hosts {
-		result.Hosts = append(result.Hosts, &graphragpb.Host{
-			Ip:       h.IP,
-			Hostname: h.Hostname,
-			State:    h.State,
-			Os:       h.OS,
-		})
-	}
-
-	// Convert ports with parent reference to host
-	for _, p := range discoveryResult.Ports {
-		result.Ports = append(result.Ports, &graphragpb.Port{
-			HostId:   p.HostID, // Parent reference
-			Number:   int32(p.Number),
-			Protocol: p.Protocol,
-			State:    p.State,
-		})
-	}
-
-	// Convert services with parent reference to port
-	for _, s := range discoveryResult.Services {
-		result.Services = append(result.Services, &graphragpb.Service{
-			PortId:  s.PortID, // Parent reference (format: "host_id:port:protocol")
-			Name:    s.Name,
-			Version: s.Version,
-			Banner:  s.Banner,
-		})
-	}
-
-	return result
+	return discoveryResult.Proto
 }

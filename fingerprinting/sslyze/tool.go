@@ -336,58 +336,73 @@ func parseCertificateInfoProto(cert map[string]any) *toolspb.SslyzeCertificateIn
 	return certificate
 }
 
+// ptrStr returns a pointer to the given string
+func ptrStr(s string) *string {
+	return &s
+}
+
 // convertToDiscoveryResult converts sslyze results to GraphRAG discovery result proto
 func convertToDiscoveryResult(response *toolspb.SslyzeResponse) *graphragpb.DiscoveryResult {
 	result := &graphragpb.DiscoveryResult{
-		Certificates:    []*graphragpb.Certificate{},
-		Vulnerabilities: []*graphragpb.Vulnerability{},
+		Certificates: []*graphragpb.Certificate{},
+		Findings:     []*graphragpb.Finding{},
 	}
 
 	// Track unique certificates by subject
 	certMap := make(map[string]*graphragpb.Certificate)
-	// Track unique vulnerabilities
-	vulnMap := make(map[string]*graphragpb.Vulnerability)
+	// Track unique findings (vulnerabilities)
+	findingMap := make(map[string]*graphragpb.Finding)
 
 	for _, r := range response.Results {
 		// Extract certificate if present
 		if r.Certificate != nil && r.Certificate.SubjectDn != "" {
 			if _, exists := certMap[r.Certificate.SubjectDn]; !exists {
-				certMap[r.Certificate.SubjectDn] = &graphragpb.Certificate{
-					SerialNumber:            r.Certificate.SerialNumber,
-					Subject:                 r.Certificate.SubjectDn,
-					Issuer:                  r.Certificate.IssuerDn,
-					NotBefore:               r.Certificate.NotBefore,
-					NotAfter:                r.Certificate.NotAfter,
-					SubjectAlternativeNames: r.Certificate.Sans,
-					SignatureAlgorithm:      r.Certificate.SignatureAlgorithm,
-					KeySize:                 r.Certificate.PublicKeySize,
-					Fingerprint:             r.Certificate.FingerprintSha256,
+				cert := &graphragpb.Certificate{
+					Subject: ptrStr(r.Certificate.SubjectDn),
+					Issuer:  ptrStr(r.Certificate.IssuerDn),
 				}
+				if r.Certificate.SerialNumber != "" {
+					cert.SerialNumber = ptrStr(r.Certificate.SerialNumber)
+				}
+				if r.Certificate.FingerprintSha256 != "" {
+					cert.FingerprintSha256 = ptrStr(r.Certificate.FingerprintSha256)
+				}
+				// Combine SANs into single string
+				if len(r.Certificate.Sans) > 0 {
+					cert.San = ptrStr(strings.Join(r.Certificate.Sans, ", "))
+				}
+				certMap[r.Certificate.SubjectDn] = cert
 			}
 		}
 
-		// Extract vulnerabilities from security checks
+		// Extract findings from security checks
 		if r.Heartbleed != nil && r.Heartbleed.Vulnerable {
-			vulnID := "CVE-2014-0160"
-			if _, exists := vulnMap[vulnID]; !exists {
-				vulnMap[vulnID] = &graphragpb.Vulnerability{
-					Id:          "CVE-2014-0160",
-					Title:       "Heartbleed",
-					Description: r.Heartbleed.Details,
-					Severity:    "high",
+			findingID := "CVE-2014-0160"
+			if _, exists := findingMap[findingID]; !exists {
+				finding := &graphragpb.Finding{
+					Title:    "Heartbleed Vulnerability (CVE-2014-0160)",
+					Severity: "high",
 				}
+				if r.Heartbleed.Details != "" {
+					finding.Description = ptrStr(r.Heartbleed.Details)
+				}
+				finding.CveIds = ptrStr("CVE-2014-0160")
+				findingMap[findingID] = finding
 			}
 		}
 
 		if r.Robot != nil && r.Robot.Vulnerable {
-			vulnID := "CVE-2017-13099"
-			if _, exists := vulnMap[vulnID]; !exists {
-				vulnMap[vulnID] = &graphragpb.Vulnerability{
-					Id:          "CVE-2017-13099",
-					Title:       "ROBOT Attack",
-					Description: r.Robot.Details,
-					Severity:    "medium",
+			findingID := "CVE-2017-13099"
+			if _, exists := findingMap[findingID]; !exists {
+				finding := &graphragpb.Finding{
+					Title:    "ROBOT Attack Vulnerability (CVE-2017-13099)",
+					Severity: "medium",
 				}
+				if r.Robot.Details != "" {
+					finding.Description = ptrStr(r.Robot.Details)
+				}
+				finding.CveIds = ptrStr("CVE-2017-13099")
+				findingMap[findingID] = finding
 			}
 		}
 	}
@@ -397,9 +412,9 @@ func convertToDiscoveryResult(response *toolspb.SslyzeResponse) *graphragpb.Disc
 		result.Certificates = append(result.Certificates, cert)
 	}
 
-	// Add unique vulnerabilities
-	for _, vuln := range vulnMap {
-		result.Vulnerabilities = append(result.Vulnerabilities, vuln)
+	// Add unique findings
+	for _, finding := range findingMap {
+		result.Findings = append(result.Findings, finding)
 	}
 
 	return result

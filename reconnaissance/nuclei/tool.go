@@ -256,59 +256,70 @@ func parseOutputProto(data []byte, target string) (*toolspb.NucleiResponse, erro
 	}, nil
 }
 
+// ptrStr returns a pointer to the given string
+func ptrStr(s string) *string {
+	return &s
+}
+
+// ptrFloat returns a pointer to the given float64
+func ptrFloat(f float64) *float64 {
+	return &f
+}
+
 // convertToDiscoveryResult converts nuclei results to GraphRAG discovery result proto
 func convertToDiscoveryResult(response *toolspb.NucleiResponse) *graphragpb.DiscoveryResult {
 	result := &graphragpb.DiscoveryResult{
-		Vulnerabilities: []*graphragpb.Vulnerability{},
+		Findings: []*graphragpb.Finding{},
 	}
 
-	// Track unique vulnerabilities (by CVE or template ID)
-	vulnMap := make(map[string]*graphragpb.Vulnerability)
+	// Track unique findings (by CVE or template ID)
+	findingMap := make(map[string]*graphragpb.Finding)
 
 	for _, match := range response.Results {
-		// Build vulnerability ID
-		vulnID := match.TemplateId
+		// Build finding ID
+		findingID := match.TemplateId
 
 		// If we have CVE IDs, use the first one as the ID
 		if match.Info != nil && match.Info.Classification != nil && len(match.Info.Classification.CveId) > 0 {
-			vulnID = match.Info.Classification.CveId[0]
+			findingID = match.Info.Classification.CveId[0]
 		}
 
-		// Skip if we've already added this vulnerability
-		if _, exists := vulnMap[vulnID]; exists {
+		// Skip if we've already added this finding
+		if _, exists := findingMap[findingID]; exists {
 			continue
 		}
 
-		// Create vulnerability
-		vuln := &graphragpb.Vulnerability{
-			Id:          vulnID,
-			Title:       match.TemplateName,
-			Description: "",
-			Severity:    strings.ToLower(match.Info.Severity),
-			References:  []string{},
+		// Create finding
+		finding := &graphragpb.Finding{
+			Title:    match.TemplateName,
+			Severity: strings.ToLower(match.Info.Severity),
 		}
 
 		if match.Info != nil {
-			vuln.Description = match.Info.Description
-			vuln.References = match.Info.Reference
+			if match.Info.Description != "" {
+				finding.Description = ptrStr(match.Info.Description)
+			}
+			if match.Info.Remediation != "" {
+				finding.Remediation = ptrStr(match.Info.Remediation)
+			}
 
 			// Add classification data
 			if match.Info.Classification != nil {
-				// Use first CWE if multiple
-				if len(match.Info.Classification.CweId) > 0 {
-					vuln.Cwe = match.Info.Classification.CweId[0]
+				if len(match.Info.Classification.CveId) > 0 {
+					finding.CveIds = ptrStr(strings.Join(match.Info.Classification.CveId, ", "))
 				}
-				vuln.Cvss = match.Info.Classification.CvssScore
-				vuln.CvssVector = match.Info.Classification.CvssMetrics
+				if match.Info.Classification.CvssScore > 0 {
+					finding.CvssScore = ptrFloat(match.Info.Classification.CvssScore)
+				}
 			}
 		}
 
-		vulnMap[vulnID] = vuln
+		findingMap[findingID] = finding
 	}
 
-	// Add unique vulnerabilities
-	for _, vuln := range vulnMap {
-		result.Vulnerabilities = append(result.Vulnerabilities, vuln)
+	// Add unique findings
+	for _, finding := range findingMap {
+		result.Findings = append(result.Findings, finding)
 	}
 
 	return result

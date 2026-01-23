@@ -2,8 +2,10 @@ module github.com/zero-day-ai/gibson-tools-official/reconnaissance/httpx
 
 go 1.24.4
 
+replace github.com/zero-day-ai/sdk => ../../../sdk
+
 require (
-	github.com/zero-day-ai/sdk v0.35.0
+	github.com/zero-day-ai/sdk v0.36.2
 	google.golang.org/protobuf v1.36.11
 )
 

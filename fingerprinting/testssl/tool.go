@@ -376,50 +376,59 @@ func parseCertificate(entry TestSSLEntry) map[string]any {
 	return cert
 }
 
+// ptrStr returns a pointer to the given string
+func ptrStr(s string) *string {
+	return &s
+}
+
 // convertToDiscoveryResult converts testssl results to GraphRAG discovery result proto
 func convertToDiscoveryResult(response *toolspb.TestsslResponse) *graphragpb.DiscoveryResult {
 	result := &graphragpb.DiscoveryResult{
-		Certificates:    []*graphragpb.Certificate{},
-		Vulnerabilities: []*graphragpb.Vulnerability{},
+		Certificates: []*graphragpb.Certificate{},
+		Findings:     []*graphragpb.Finding{},
 	}
 
 	// Track unique certificates by subject
 	certMap := make(map[string]*graphragpb.Certificate)
-	// Track unique vulnerabilities
-	vulnMap := make(map[string]*graphragpb.Vulnerability)
+	// Track unique findings (vulnerabilities)
+	findingMap := make(map[string]*graphragpb.Finding)
 
 	for _, r := range response.Results {
 		// Extract certificate if present
 		if r.Certificate != nil && r.Certificate.SubjectDn != "" {
 			if _, exists := certMap[r.Certificate.SubjectDn]; !exists {
-				certMap[r.Certificate.SubjectDn] = &graphragpb.Certificate{
-					Subject:   r.Certificate.SubjectDn,
-					Issuer:    r.Certificate.IssuerDn,
-					NotBefore: r.Certificate.NotBefore,
-					NotAfter:  r.Certificate.NotAfter,
+				cert := &graphragpb.Certificate{
+					Subject: ptrStr(r.Certificate.SubjectDn),
+					Issuer:  ptrStr(r.Certificate.IssuerDn),
 				}
+				certMap[r.Certificate.SubjectDn] = cert
 			}
 		}
 
-		// Extract vulnerabilities
+		// Extract findings from vulnerabilities
 		for _, vuln := range r.Vulnerabilities {
 			if !vuln.Vulnerable {
 				continue // Skip non-vulnerable findings
 			}
 
-			vulnID := vuln.Id
-			if _, exists := vulnMap[vulnID]; !exists {
-				v := &graphragpb.Vulnerability{
-					Id:          vulnID,
-					Title:       vuln.Name,
-					Description: vuln.Finding,
-					Severity:    strings.ToLower(vuln.Severity),
+			findingID := vuln.Id
+			// Use first CVE if present
+			if len(vuln.Cve) > 0 {
+				findingID = vuln.Cve[0]
+			}
+
+			if _, exists := findingMap[findingID]; !exists {
+				finding := &graphragpb.Finding{
+					Title:    vuln.Name,
+					Severity: strings.ToLower(vuln.Severity),
 				}
-				// Add first CVE if present
+				if vuln.Finding != "" {
+					finding.Description = ptrStr(vuln.Finding)
+				}
 				if len(vuln.Cve) > 0 {
-					v.Id = vuln.Cve[0]
+					finding.CveIds = ptrStr(strings.Join(vuln.Cve, ", "))
 				}
-				vulnMap[vulnID] = v
+				findingMap[findingID] = finding
 			}
 		}
 	}
@@ -429,9 +438,9 @@ func convertToDiscoveryResult(response *toolspb.TestsslResponse) *graphragpb.Dis
 		result.Certificates = append(result.Certificates, cert)
 	}
 
-	// Add unique vulnerabilities
-	for _, vuln := range vulnMap {
-		result.Vulnerabilities = append(result.Vulnerabilities, vuln)
+	// Add unique findings
+	for _, finding := range findingMap {
+		result.Findings = append(result.Findings, finding)
 	}
 
 	return result
