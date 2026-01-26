@@ -9,10 +9,8 @@ import (
 
 	"github.com/zero-day-ai/sdk/api/gen/graphragpb"
 	"github.com/zero-day-ai/sdk/api/gen/toolspb"
-	"github.com/zero-day-ai/sdk/enum"
 	"github.com/zero-day-ai/sdk/exec"
 	"github.com/zero-day-ai/sdk/health"
-	sdkinput "github.com/zero-day-ai/sdk/input"
 	"github.com/zero-day-ai/sdk/tool"
 	"github.com/zero-day-ai/sdk/toolerr"
 	"github.com/zero-day-ai/sdk/types"
@@ -20,34 +18,45 @@ import (
 )
 
 const (
-	ToolName        = "nmap"
-	ToolVersion     = "1.0.0"
-	ToolDescription = "Network exploration tool and security/port scanner"
-	BinaryName      = "nmap"
+	ToolName    = "nmap"
+	ToolVersion = "1.0.0"
+	ToolDescription = `Network mapper and port scanner. Targets and args are passed; tool automatically adds "-oX -" for XML output.
+
+SCAN TYPES:
+  -sn          Ping scan (host discovery, no port scan)
+  -sS          SYN stealth scan (default, requires root)
+  -sT          TCP connect scan (no root required)
+  -sU          UDP scan
+  -sV          Version detection (identify service versions)
+  -sC          Script scan (run default NSE scripts)
+  -A           Aggressive (OS detection, version, scripts, traceroute)
+
+TIMING TEMPLATES (-T0 to -T5):
+  -T0          Paranoid (IDS evasion, very slow)
+  -T1          Sneaky (IDS evasion, slow)
+  -T2          Polite (less bandwidth, slower)
+  -T3          Normal (default)
+  -T4          Aggressive (fast, assumes good network)
+  -T5          Insane (extremely fast, may miss ports)
+
+PORT SPECIFICATION:
+  -p 22,80,443        Specific ports
+  -p 1-1000           Port range
+  -p-                 All 65535 ports
+  --top-ports N       Scan N most common ports
+
+DETECTION:
+  -O               OS detection
+  --osscan-guess   Aggressive OS guessing
+
+COMMON EXAMPLES:
+  Quick host discovery: ["-sn"]
+  Fast port scan: ["-sT", "-T4", "--top-ports", "100"]
+  Full service scan: ["-sV", "-sC", "-O", "-T4", "-p-"]
+  Stealth scan: ["-sS", "-T2", "-p", "1-1000"]
+  Web services: ["-sV", "-p", "80,443,8080,8443"]`
+	BinaryName = "nmap"
 )
-
-func init() {
-	// Register scanType enum mappings
-	enum.Register("nmap", "scanType", map[string]string{
-		"ping":    "SCAN_TYPE_PING",
-		"syn":     "SCAN_TYPE_SYN",
-		"connect": "SCAN_TYPE_CONNECT",
-		"udp":     "SCAN_TYPE_UDP",
-		"ack":     "SCAN_TYPE_ACK",
-		"window":  "SCAN_TYPE_WINDOW",
-		"maimon":  "SCAN_TYPE_MAIMON",
-	})
-
-	// Register timing enum mappings
-	enum.Register("nmap", "timing", map[string]string{
-		"paranoid":   "TIMING_TEMPLATE_PARANOID",
-		"sneaky":     "TIMING_TEMPLATE_SNEAKY",
-		"polite":     "TIMING_TEMPLATE_POLITE",
-		"normal":     "TIMING_TEMPLATE_NORMAL",
-		"aggressive": "TIMING_TEMPLATE_AGGRESSIVE",
-		"insane":     "TIMING_TEMPLATE_INSANE",
-	})
-}
 
 // ToolImpl implements the nmap tool
 type ToolImpl struct{}
@@ -109,38 +118,20 @@ func (t *ToolImpl) ExecuteProto(ctx context.Context, input proto.Message) (proto
 		return nil, fmt.Errorf("at least one target is required")
 	}
 
-	// Use first target for now (nmap can handle multiple targets, but our logic uses single target)
-	target := req.Targets[0]
-
-	// Extract parameters with defaults
-	ports := req.Ports
-	if ports == "" {
-		ports = "1-1000"
+	if len(req.Args) == 0 {
+		return nil, fmt.Errorf("at least one argument is required")
 	}
 
-	// Convert proto scan type to string
-	scanType := convertScanType(req.ScanType)
-	serviceDetection := req.ServiceDetection
-	osDetection := req.OsDetection
-	scripts := req.Scripts
-
-	// Convert proto timing template to integer (0-5)
-	timing := convertTimingTemplate(req.Timing)
-
-	// Determine timeout from request or use default
-	timeout := sdkinput.DefaultTimeout()
-	if req.HostTimeout > 0 {
-		timeout = time.Duration(req.HostTimeout) * time.Second
-	}
-
-	// Build nmap command arguments
-	args := buildArgs(target, ports, scanType, serviceDetection, osDetection, scripts, timing)
+	// Build command arguments: -oX - (XML output to stdout) + user args + targets
+	args := []string{"-oX", "-"}
+	args = append(args, req.Args...)
+	args = append(args, req.Targets...)
 
 	// Execute nmap command
 	result, err := exec.Run(ctx, exec.Config{
 		Command: BinaryName,
 		Args:    args,
-		Timeout: timeout,
+		Timeout: 5 * time.Minute, // Default timeout
 	})
 
 	if err != nil {
@@ -169,57 +160,6 @@ func (t *ToolImpl) ExecuteProto(ctx context.Context, input proto.Message) (proto
 // Health checks if the nmap binary is available
 func (t *ToolImpl) Health(ctx context.Context) types.HealthStatus {
 	return health.BinaryCheck(BinaryName)
-}
-
-// buildArgs constructs the command-line arguments for nmap
-func buildArgs(target, ports, scanType string, serviceDetection, osDetection bool, scripts []string, timing int) []string {
-	// Ping scan mode (-sn) is host discovery only, no ports
-	if scanType == "ping" {
-		args := []string{"-oX", "-", "-sn"}
-		if timing >= 0 && timing <= 5 {
-			args = append(args, fmt.Sprintf("-T%d", timing))
-		}
-		args = append(args, target)
-		return args
-	}
-
-	args := []string{"-oX", "-", "-p", ports}
-
-	// Scan type
-	switch scanType {
-	case "syn":
-		args = append(args, "-sS")
-	case "connect":
-		args = append(args, "-sT")
-	case "udp":
-		args = append(args, "-sU")
-	case "ack":
-		args = append(args, "-sA")
-	case "window":
-		args = append(args, "-sW")
-	case "maimon":
-		args = append(args, "-sM")
-	}
-
-	if serviceDetection {
-		args = append(args, "-sV")
-	}
-
-	if osDetection {
-		args = append(args, "-O")
-	}
-
-	if len(scripts) > 0 {
-		args = append(args, "--script", strings.Join(scripts, ","))
-	}
-
-	if timing >= 0 && timing <= 5 {
-		args = append(args, fmt.Sprintf("-T%d", timing))
-	}
-
-	args = append(args, target)
-
-	return args
 }
 
 // NmapRun represents the root XML element
@@ -395,52 +335,6 @@ func parseOutput(data []byte) (*graphragpb.DiscoveryResult, error) {
 // ptrStr returns a pointer to the given string
 func ptrStr(s string) *string {
 	return &s
-}
-
-// convertScanType converts proto ScanType enum to nmap string
-func convertScanType(scanType toolspb.ScanType) string {
-	switch scanType {
-	case toolspb.ScanType_SCAN_TYPE_SYN:
-		return "syn"
-	case toolspb.ScanType_SCAN_TYPE_CONNECT:
-		return "connect"
-	case toolspb.ScanType_SCAN_TYPE_UDP:
-		return "udp"
-	case toolspb.ScanType_SCAN_TYPE_ACK:
-		return "ack"
-	case toolspb.ScanType_SCAN_TYPE_WINDOW:
-		return "window"
-	case toolspb.ScanType_SCAN_TYPE_MAIMON:
-		return "maimon"
-	case toolspb.ScanType_SCAN_TYPE_PING:
-		return "ping"
-	case toolspb.ScanType_SCAN_TYPE_UNSPECIFIED:
-		return "connect"
-	default:
-		return "connect"
-	}
-}
-
-// convertTimingTemplate converts proto TimingTemplate enum to integer (0-5)
-func convertTimingTemplate(timing toolspb.TimingTemplate) int {
-	switch timing {
-	case toolspb.TimingTemplate_TIMING_TEMPLATE_PARANOID:
-		return 0
-	case toolspb.TimingTemplate_TIMING_TEMPLATE_SNEAKY:
-		return 1
-	case toolspb.TimingTemplate_TIMING_TEMPLATE_POLITE:
-		return 2
-	case toolspb.TimingTemplate_TIMING_TEMPLATE_NORMAL:
-		return 3
-	case toolspb.TimingTemplate_TIMING_TEMPLATE_AGGRESSIVE:
-		return 4
-	case toolspb.TimingTemplate_TIMING_TEMPLATE_INSANE:
-		return 5
-	case toolspb.TimingTemplate_TIMING_TEMPLATE_UNSPECIFIED:
-		return 3
-	default:
-		return 3
-	}
 }
 
 // convertToProtoResponse converts DiscoveryResult to NmapResponse

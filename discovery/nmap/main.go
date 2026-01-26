@@ -8,7 +8,7 @@ import (
 
 func main() {
 	tool := NewTool()
-	if err := serve.Tool(tool); err != nil {
+	if err := serve.Tool(tool, serve.WithRegistryFromEnv()); err != nil {
 		log.Fatal(err)
 	}
 }

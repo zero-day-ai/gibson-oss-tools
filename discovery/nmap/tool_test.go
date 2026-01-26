@@ -1,9 +1,11 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"testing"
 
+	"github.com/zero-day-ai/sdk/api/gen/toolspb"
 	"github.com/zero-day-ai/sdk/toolerr"
 )
 
@@ -283,90 +285,95 @@ func TestParseOutput(t *testing.T) {
 	})
 }
 
-func TestBuildArgs(t *testing.T) {
+func TestValidation(t *testing.T) {
+	tool := NewTool()
+
 	tests := []struct {
-		name              string
-		target            string
-		ports             string
-		scanType          string
-		serviceDetection  bool
-		osDetection       bool
-		scripts           []string
-		timing            int
-		expectedContains  []string
-		expectedNotContains []string
+		name        string
+		request     *toolspb.NmapRequest
+		expectError bool
+		errorMsg    string
 	}{
 		{
-			name:             "ping scan",
-			target:           "192.168.1.1",
-			ports:            "80",
-			scanType:         "ping",
-			serviceDetection: false,
-			osDetection:      false,
-			scripts:          nil,
-			timing:           3,
-			expectedContains: []string{"-sn", "-T3", "192.168.1.1"},
-			expectedNotContains: []string{"-p", "80"},
+			name: "valid request",
+			request: &toolspb.NmapRequest{
+				Targets: []string{"192.168.1.1"},
+				Args:    []string{"-sn"},
+			},
+			expectError: false,
 		},
 		{
-			name:             "connect scan with service detection",
-			target:           "192.168.1.1",
-			ports:            "22,80,443",
-			scanType:         "connect",
-			serviceDetection: true,
-			osDetection:      false,
-			scripts:          nil,
-			timing:           4,
-			expectedContains: []string{"-sT", "-sV", "-p", "22,80,443", "-T4", "192.168.1.1"},
+			name: "empty targets",
+			request: &toolspb.NmapRequest{
+				Targets: []string{},
+				Args:    []string{"-sn"},
+			},
+			expectError: true,
+			errorMsg:    "at least one target is required",
 		},
 		{
-			name:             "syn scan with os detection",
-			target:           "192.168.1.1",
-			ports:            "1-1000",
-			scanType:         "syn",
-			serviceDetection: false,
-			osDetection:      true,
-			scripts:          nil,
-			timing:           3,
-			expectedContains: []string{"-sS", "-O", "-p", "1-1000", "-T3", "192.168.1.1"},
+			name: "nil targets",
+			request: &toolspb.NmapRequest{
+				Targets: nil,
+				Args:    []string{"-sn"},
+			},
+			expectError: true,
+			errorMsg:    "at least one target is required",
 		},
 		{
-			name:             "scan with scripts",
-			target:           "192.168.1.1",
-			ports:            "80",
-			scanType:         "connect",
-			serviceDetection: false,
-			osDetection:      false,
-			scripts:          []string{"http-enum", "http-headers"},
-			timing:           3,
-			expectedContains: []string{"-sT", "--script", "http-enum,http-headers", "192.168.1.1"},
+			name: "empty args",
+			request: &toolspb.NmapRequest{
+				Targets: []string{"192.168.1.1"},
+				Args:    []string{},
+			},
+			expectError: true,
+			errorMsg:    "at least one argument is required",
+		},
+		{
+			name: "nil args",
+			request: &toolspb.NmapRequest{
+				Targets: []string{"192.168.1.1"},
+				Args:    nil,
+			},
+			expectError: true,
+			errorMsg:    "at least one argument is required",
+		},
+		{
+			name: "multiple targets",
+			request: &toolspb.NmapRequest{
+				Targets: []string{"192.168.1.1", "192.168.1.2", "192.168.1.0/24"},
+				Args:    []string{"-sn"},
+			},
+			expectError: false,
+		},
+		{
+			name: "multiple args",
+			request: &toolspb.NmapRequest{
+				Targets: []string{"192.168.1.0/24"},
+				Args:    []string{"-sV", "-sC", "-O", "-T4", "-p", "1-1000"},
+			},
+			expectError: false,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			args := buildArgs(tt.target, tt.ports, tt.scanType, tt.serviceDetection, tt.osDetection, tt.scripts, tt.timing)
+			// Note: We're only testing validation, not actual execution
+			// Actual execution would require nmap binary to be installed
+			_, err := tool.ExecuteProto(context.Background(), tt.request)
 
-			// Check that expected arguments are present
-			for _, expected := range tt.expectedContains {
-				found := false
-				for _, arg := range args {
-					if arg == expected {
-						found = true
-						break
-					}
+			if tt.expectError {
+				if err == nil {
+					t.Errorf("expected error but got none")
+				} else if tt.errorMsg != "" && err.Error() != tt.errorMsg {
+					t.Errorf("expected error message %q, got %q", tt.errorMsg, err.Error())
 				}
-				if !found {
-					t.Errorf("expected argument %q not found in args: %v", expected, args)
-				}
-			}
-
-			// Check that unexpected arguments are not present
-			for _, unexpected := range tt.expectedNotContains {
-				for _, arg := range args {
-					if arg == unexpected {
-						t.Errorf("unexpected argument %q found in args: %v", unexpected, args)
-					}
+			} else {
+				// For valid requests, we expect execution errors (nmap not found in test env)
+				// but NOT validation errors. Validation errors would fail before execution.
+				if err != nil && (err.Error() == "at least one target is required" ||
+					err.Error() == "at least one argument is required") {
+					t.Errorf("unexpected validation error: %v", err)
 				}
 			}
 		})
